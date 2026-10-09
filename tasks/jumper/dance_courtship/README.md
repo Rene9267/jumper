@@ -7,9 +7,9 @@ meant to be learned the same way as `jumper.dance`.
 
 The poses live in `tools/courtship_keyframes.py`. The numbers at the top of that
 file are the ones to edit: `TILT_RAD` (starts at 10 degrees), `SHIMMY_ROLL_RAD`,
-`SHIMMY_Y_M`, `BOW_PITCH_RAD`, `BOW_DROP_M`, `CLAW_OPEN`. Roll this large has not
-been tried on the robot. Raise `TILT_RAD` in the preview until a foot slips, then
-stop.
+`SHIMMY_Y_M`, `BOW_PITCH_RAD`, `BOW_DROP_M`, `CLAW_OPEN`, `FLOP_LIFT_RAD`,
+`TILT_FOOT_CLEAR_M`. Roll this large has not been tried on the robot. Raise
+`TILT_RAD` in the preview until a foot slips, then stop.
 
 ## Regenerate the clip
 
@@ -20,10 +20,11 @@ python tools/make_courtship_dance.py
 ```
 
 That rewrites `media/courtship.npz` and prints the joint speeds, how close each
-joint comes to a stop, and how far the support feet drift. It refuses to write
-the file if a joint exceeds the servo's corner speed, leaves its mechanical range,
-or a support foot leaves its stance point by more than 2 mm. Running it twice
-writes the same file.
+joint comes to a stop, how far the support feet drift, and the lowest mesh of
+every link. It refuses to write the file if a joint exceeds the servo's corner
+speed, leaves its mechanical range, a support foot leaves its stance point by
+more than 2 mm, a non-foot mesh comes within 2 mm of the floor, or a foot mesh
+goes through the floor. Running it twice writes the same file.
 
 ## Preview
 
@@ -65,8 +66,8 @@ description; the wording is in `media/README.md`.
 
 ## What to look at in the preview
 
-- The claws rise apart and open, then meet overhead. They should not pass through
-  each other on the way up.
+- The claws rise apart and open, then finish overhead, clearly above the shell.
+  They should not pass through each other on the way up.
 - Beat 3 is a shut clack, beat 4 an open one.
 - Beats 5-6 sway left, then right, with the claws still high.
 - Beat 7 freezes and the left claw drops halfway. Beat 8 is the right claw
@@ -77,7 +78,8 @@ description; the wording is in `media/README.md`.
 - Beats 13-14 lean right, then left, about 10 degrees. If a foot skates, that
   lean is too big.
 - Beat 15 makes a heart overhead (the fingertip origins are about 11 mm apart, so
-  the pads should touch). Beat 16 holds it, then the left claw flops. On the way
-  down that claw passes about 7 mm from the right tip and may look like a brush.
-- The overhead claws peak near 0.26 m. If they leave the top of the frame, the
-  camera in the export is `jumper.dance`'s and was framed for a slightly lower arm.
+  the pads should touch). Beat 16 holds it, then the left claw flops in about
+  0.18 s and stops short of the floor. On the way down that claw passes about
+  7 mm from the right tip and may look like a brush.
+- At beat 2 the claw tips sit about 90 mm above the top of the shell. The export
+  camera is `jumper.dance`'s.

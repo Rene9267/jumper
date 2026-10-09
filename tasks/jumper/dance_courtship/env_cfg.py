@@ -8,9 +8,9 @@ the rule is applied to this clip's measurements and the result is quoted -- read
 ## This clip, measured
 
 At the 50 Hz control rate the generator writes (10.26 s, 514 frames): per-joint
-position std 0.164 rad at the median and 0.706 at the most active, RMS amplitude
-0.315 rad; joint velocity RMS 1.154 rad/s, per-joint std 0.901 at the median and
-1.969 at the most active, peaking at 17.7 rad/s; the base between 100.5 and
+position std 0.164 rad at the median and 0.838 at the most active, RMS amplitude
+0.394 rad; joint velocity RMS 1.237 rad/s, per-joint std 0.907 at the median and
+1.976 at the most active, peaking at 17.7 rad/s; the base between 100.5 and
 106.5 mm; roll to 10 degrees and nose-up pitch to 10 degrees.
 
 **The reward weights are starting points**, as they are for jumper.dance: no
@@ -64,21 +64,21 @@ def env_cfg(asset: Path | None = None, play: bool = False) -> ManagerBasedRlEnvC
         #
         # Joint position: jumper.dance's rule is a std at 0.44 of the clip's RMS
         # amplitude, which scores a robot standing still through the clip near
-        # 0.006. Here: 0.44 x 0.315 -> 0.14, standing still 0.006.
-        joint_pos_std=0.14,
+        # 0.006. Here: 0.44 x 0.394 -> 0.17, standing still 0.005.
+        joint_pos_std=0.17,
         joint_pos_weight=1.0,
         # Joint velocity: two thirds of the clip's velocity RMS, standing still
-        # about 0.10. Here: 1.154 -> 0.77, standing still 0.11. Half the
+        # about 0.10. Here: 1.237 -> 0.82, standing still 0.10. Half the
         # position weight, so when they disagree the pose wins.
-        joint_vel_std=0.77,
+        joint_vel_std=0.82,
         joint_vel_weight=0.5,
         # Smoothness: -0.1 is calibrated at this action scale (0.25) and the
         # second difference at half of it -- properties of the robot and the
         # action space, not of the clip.
         action_rate_weight=-0.1,
         action_acc_weight=-0.05,
-        # Power: 22 joints at ~0.25 N*m and this clip's ~1.15 rad/s is ~6.3 W,
-        # so -0.02 is about -0.13 a step, 2% of the budget.
+        # Power: 22 joints at ~0.25 N*m and this clip's ~1.24 rad/s is ~6.8 W,
+        # so -0.02 is about -0.14 a step, 2% of the budget.
         power_weight=-0.02,
         # Torque above the continuous rating: anchored to the servo, not the clip
         # -- one joint at the plateau costs 0.6, 9% of the budget.

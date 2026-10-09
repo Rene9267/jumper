@@ -67,6 +67,15 @@ BOW_PITCH_RAD = math.radians(10.0)
 BOW_DROP_M = 0.006
 # How wide the claws open. 1.20 rad is well inside the finger stops.
 CLAW_OPEN = 1.20
+#: Extra shoulder pitch on the flop, beyond the stance. The stance pitch puts the
+#: left pad on the floor; this much more (about 0.10 rad) leaves roughly 12 mm
+#: under it. The flop is still 0.18 s.
+FLOP_LIFT_RAD = 0.10
+#: At a 10 degree roll the support-foot mesh, which is not a sphere about the
+#: foot site, crosses the floor by about 0.6 mm while the site stays put. The
+#: generator lifts the solved feet by this much at ``TILT_RAD``, and by the same
+#: fraction at smaller rolls, so the mesh stays above the plane.
+TILT_FOOT_CLEAR_M = 0.001
 
 
 def t(beat: int, fraction: float = 0.0, *, early: float = 0.0) -> float:
@@ -128,24 +137,29 @@ def _home_claw(side: str) -> tuple[float, float, float, float, float]:
 #: Standing, claws down, the pose the clip leaves and returns to.
 HOME_POSE = Pose(_home_claw("LF"), _home_claw("RF"))
 
-#: Halfway up, claws already wide. A straight blend from the stance to the
-#: overhead pose sweeps the fingertips through each other; this waypoint keeps
-#: them about 190 mm apart while they climb.
-RISE_APART = both((-0.71, -2.15, -0.40, -0.30, -0.50))
-#: Both claws up above the shell, fingers open. Tips sit near 0.24 m.
-OVERHEAD_OPEN = both((-1.05, -2.95, -0.70, -0.30, -CLAW_OPEN))
+#: Yaw, pitch, roll, wrist of both claws when they are up. The finger is separate
+#: so the clack can shut them without lowering the arms. Chosen so the fingertip
+#: is about 90 mm above the top of the shell and still in front of it: the old
+#: pitch folded the arm back until the claw sat at about eye height.
+_OVERHEAD = (-0.90, -3.15, -1.40, 0.95)
+#: Halfway up, already above the shell and still wide apart. A straight blend
+#: from the stance to the overhead pose sweeps the fingertips through each other
+#: and folds the arms backward; this waypoint climbs in front of the body instead.
+RISE_APART = both((-0.54, -2.60, -1.20, 0.10, -0.40))
+#: Beat 2. Both claws above the shell, fingers open.
+OVERHEAD_OPEN = both((*_OVERHEAD, -CLAW_OPEN))
 #: Same arms, fingers shut. The clack is this change and nothing else.
-OVERHEAD_SHUT = both((-1.05, -2.95, -0.70, -0.30, 0.0))
+OVERHEAD_SHUT = both((*_OVERHEAD, 0.0))
 
 #: Beat 5: sway and lean to the robot's left, claws still overhead.
 SHIMMY_LEFT = both(
-    (-1.05, -2.95, -0.70, -0.30, -CLAW_OPEN),
+    OVERHEAD_OPEN.lf,
     y=SHIMMY_Y_M,
     roll=-SHIMMY_ROLL_RAD,
 )
 #: Beat 6: the other way.
 SHIMMY_RIGHT = both(
-    (-1.05, -2.95, -0.70, -0.30, -CLAW_OPEN),
+    OVERHEAD_OPEN.lf,
     y=-SHIMMY_Y_M,
     roll=SHIMMY_ROLL_RAD,
 )
@@ -199,8 +213,11 @@ HEART_APPROACH = both((-1.20, -2.70, -0.50, -0.30, -0.80))
 #: swings the tips through each other and then apart again, which reads as a miss.
 #: Grippers stay partly open so the claws read as the lobes of a heart.
 HEART = both((-1.40, -2.75, -0.75, -0.45, -0.70))
-#: Beat 16, offbeat. The left claw drops to the stance; the right holds the heart.
-FLOP = Pose(lf=_home_claw("LF"), rf=HEART.rf)
+#: Beat 16, offbeat. The left claw drops; the right holds the heart. Stopped short
+#: of the stance pitch (``FLOP_LIFT_RAD``) so the pad does not meet the floor.
+_flop_lf = list(_home_claw("LF"))
+_flop_lf[1] -= FLOP_LIFT_RAD
+FLOP = Pose(lf=tuple(_flop_lf), rf=HEART.rf)
 
 
 # (audio time in seconds, pose, label). Times must increase.

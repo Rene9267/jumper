@@ -21,6 +21,7 @@ The run prints, and refuses to write if any of these fail:
 - a joint faster than the servo's corner speed (``CORNER_SPEED``, 30.7 rad/s)
 - a joint outside its mechanical range
 - a support foot more than 2 mm off the point it stands on at ``HOME``
+- a non-foot mesh under 2 mm from the floor, or a foot mesh through the floor
 """
 
 from __future__ import annotations
@@ -42,6 +43,12 @@ CONTROL_DT = 0.02
 #: The loader's own coplanarity tolerance is 5 mm on the median frame. This is
 #: tighter because the feet are a target of the solve, not a recording's leftover.
 FOOT_TOL_M = 0.002
+#: Non-foot meshes must clear the floor by this much. 2 mm, not 3: at the stance
+#: the palm mesh is 2.3 mm up, and a 3 mm line would refuse the standing pose.
+NONFOOT_CLEAR_M = 0.002
+#: Support-foot meshes may rest on the plane. This is how far past it still counts
+#: as contact rather than a corner that has gone through.
+FOOT_MESH_TOL_M = 0.0002
 SUPPORT = ("LM", "RM", "LR", "RR")
 BODY_NAMES = ("x", "y", "z", "roll", "pitch", "yaw")
 
@@ -141,7 +148,9 @@ class _Robot:
         d.qpos[3:7] = self.rpy_to_quat(body[3:6][None, :])[0]
         d.qpos[self.q_adr] = q
 
-    def solve_feet(self, q: np.ndarray, body: np.ndarray, warm: np.ndarray) -> np.ndarray:
+    def solve_feet(
+        self, q: np.ndarray, body: np.ndarray, warm: np.ndarray, foot_lift: float = 0.0,
+    ) -> np.ndarray:
         """Move the twelve support joints so the feet sit on ``self.targets``.
 
         ``q`` carries the claw joints and is not otherwise read for the legs:
@@ -149,17 +158,23 @@ class _Robot:
         and stay on that kinematic branch. Thirty damped steps is more than a
         20 ms frame needs; the cap is what makes a pose the legs cannot reach
         fail the foot check instead of iterating forever.
+
+        ``foot_lift`` raises the target, in metres. A roll tips the foot mesh
+        through the plane while the site, which the solve holds, stays put;
+        the lift is that mesh's clearance.
         """
         out = warm.copy()
         claw = [i for i, n in enumerate(self.names) if n.startswith(("LF_", "RF_"))]
         out[claw] = q[claw]
+        lift = np.array([0.0, 0.0, foot_lift])
+        targets = {leg: pos + lift for leg, pos in self.targets.items()}
         damp = 1e-4 * np.eye(3)
         for _ in range(30):
             self._set(out, body)
             self.mujoco.mj_kinematics(self.model, self.data)
             worst = 0.0
             for leg, sid in self.sites.items():
-                err = self.targets[leg] - self.data.site_xpos[sid]
+                err = targets[leg] - self.data.site_xpos[sid]
                 worst = max(worst, float(np.linalg.norm(err)))
                 self.mujoco.mj_jacSite(self.model, self.data, self._jacp, self._jacr, sid)
                 cols = [self.index[f"{leg}_J{j}_joint"] for j in range(3)]
@@ -184,6 +199,57 @@ class _Robot:
         tips = np.stack([self.data.xpos[self.tip[side]] for side in ("LF", "RF")])
         forward_z = float(self.data.xmat[self.base].reshape(3, 3)[2, 0])
         return feet, tips, forward_z
+
+    def _mesh_z(self, gid: int) -> tuple[float, float]:
+        """World-z of the lowest and highest vertex of a mesh geom."""
+        mid = int(self.model.geom_dataid[gid])
+        adr = int(self.model.mesh_vertadr[mid])
+        n = int(self.model.mesh_vertnum[mid])
+        v = self.model.mesh_vert[adr:adr + n]
+        rot = self.data.geom_xmat[gid].reshape(3, 3)
+        z = (v @ rot.T + self.data.geom_xpos[gid])[:, 2]
+        return float(z.min()), float(z.max())
+
+    def prepare_ground(self) -> None:
+        """Index the meshes the floor check walks. Once per robot."""
+        from tasks.jumper.common.constants import FEET
+
+        mujoco = self.mujoco
+        foot = tuple(f"{name}_" for name in FEET)
+        self._ground = []
+        for gid in range(self.model.ngeom):
+            name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, gid) or ""
+            if not name.endswith(("_visual", "_meshcol")):
+                continue
+            self._ground.append((gid, name, name.startswith(foot)))
+
+    def lowest_meshes(self, q: np.ndarray, body: np.ndarray) -> tuple[tuple, tuple]:
+        """Lowest non-foot mesh and lowest foot mesh, as ``(z, name)``.
+
+        A bounding sphere above the line skips the vertex walk. Feet and the
+        other links are tracked separately: a foot is allowed to rest on the
+        plane, and anything else has to clear it.
+        """
+        if not hasattr(self, "_ground"):
+            self.prepare_ground()
+        self._set(q, body)
+        self.mujoco.mj_forward(self.model, self.data)
+        nonfoot = (1e9, "")
+        foot = (1e9, "")
+        for gid, name, is_foot in self._ground:
+            # rbound is a sphere around the geom, so a bottom above the best
+            # mesh already found cannot be the lowest.
+            bound = float(self.data.geom_xpos[gid, 2] - self.model.geom_rbound[gid])
+            best = foot[0] if is_foot else nonfoot[0]
+            if bound >= best:
+                continue
+            lo, _hi = self._mesh_z(gid)
+            if is_foot:
+                if lo < foot[0]:
+                    foot = (lo, name)
+            elif lo < nonfoot[0]:
+                nonfoot = (lo, name)
+        return nonfoot, foot
 
 
 @dataclass
@@ -267,8 +333,12 @@ def build(robot: _Robot | None = None) -> Dance:
     feet = np.zeros((n, 4, 3))
     tips = np.zeros((n, 2, 3))
     warm = home_q.copy()
+    # Full tilt lifts the feet by TILT_FOOT_CLEAR_M; a smaller roll lifts less.
+    # The site stays on the floor at zero roll, which is the stance and the bows.
+    roll_scale = kf.TILT_FOOT_CLEAR_M / kf.TILT_RAD
     for i in range(n):
-        solved = robot.solve_feet(joints[i], body[i], warm)
+        foot_lift = roll_scale * abs(float(body[i, 3]))
+        solved = robot.solve_feet(joints[i], body[i], warm, foot_lift=foot_lift)
         joints[i] = solved
         warm = solved
         foot_i, tip_i, _ = robot.feet_and_tips(solved, body[i])
@@ -393,11 +463,74 @@ def assess(dance: Dance) -> str:
         f"pitch {pitch[bow]:+.1f} deg, height {dance.body[bow, 2] * 1000:.1f} mm"
     )
 
+    # Every mesh, not only the support sites. The sites can sit on their target
+    # while a foot corner or a claw cuts the plane; that is what a render shows.
+    robot = _Robot()
+    non_z = np.empty(n)
+    foot_z = np.empty(n)
+    non_name = [""] * n
+    foot_name = [""] * n
+    shell_top = np.empty(n)
+    shell_gid = robot.mujoco.mj_name2id(
+        robot.model, robot.mujoco.mjtObj.mjOBJ_GEOM, "upper_shell_link_visual"
+    )
+    for i in range(n):
+        (nz, nn), (fz, fn) = robot.lowest_meshes(dance.joints[i], dance.body[i])
+        non_z[i], non_name[i] = nz, nn
+        foot_z[i], foot_name[i] = fz, fn
+        _lo, shell_top[i] = robot._mesh_z(shell_gid)
+    near = int(np.argmin(non_z))
+    foot_near = int(np.argmin(foot_z))
+    lines.append(
+        "meshes against the floor (z = 0):"
+    )
+    lines.append(
+        f"  non-foot closest {non_z[near] * 1000:.2f} mm "
+        f"({non_name[near]}) at t={dance.time[near]:.2f} s, "
+        f"clearance line {NONFOOT_CLEAR_M * 1000:.0f} mm"
+    )
+    lines.append(
+        f"  foot mesh lowest {foot_z[foot_near] * 1000:.2f} mm "
+        f"({foot_name[foot_near]}) at t={dance.time[foot_near]:.2f} s"
+    )
+    if float(non_z[near]) < NONFOOT_CLEAR_M:
+        problems.append(
+            f"{non_name[near]} reaches {non_z[near] * 1000:.1f} mm at "
+            f"t={dance.time[near]:.2f} s, under the {NONFOOT_CLEAR_M * 1000:.0f} mm "
+            f"floor clearance for a link that is not a foot"
+        )
+    if float(foot_z[foot_near]) < -FOOT_MESH_TOL_M:
+        problems.append(
+            f"{foot_name[foot_near]} is {foot_z[foot_near] * 1000:.2f} mm below the floor "
+            f"at t={dance.time[foot_near]:.2f} s. The foot site is held, and the mesh "
+            f"around it has crossed the plane; TILT_FOOT_CLEAR_M is that lift"
+        )
+    high = int(np.argmax(dance.tips[:, :, 2].max(axis=1)))
+    tip_z = float(dance.tips[high, :, 2].max())
+    lines.append(
+        f"  claw tip {tip_z * 1000:.0f} mm at t={dance.time[high]:.2f} s, "
+        f"shell top {shell_top[high] * 1000:.0f} mm, "
+        f"{(tip_z - shell_top[high]) * 1000:.0f} mm above the shell"
+    )
+    # The global peak is the shimmy, which rolls one claw higher. Beat 2 is the
+    # pose the rise is judged on: both claws overhead, before any lean.
+    kf = _load_keyframes()
+    for label, when in (
+        ("beat 1.5 mid-rise", kf.t(1, 0.5)),
+        ("beat 2 overhead", kf.t(2)),
+    ):
+        i = int(np.argmin(np.abs(dance.audio_time - when)))
+        z = float(dance.tips[i, :, 2].max())
+        lines.append(
+            f"  {label}: claw tip {z * 1000:.1f} mm at t={dance.time[i]:.2f} s, "
+            f"shell top {shell_top[i] * 1000:.1f} mm, "
+            f"{(z - shell_top[i]) * 1000:.1f} mm above the shell"
+        )
+
     gap = np.linalg.norm(dance.tips[:, 0] - dance.tips[:, 1], axis=1)
     closest = int(np.argmin(gap))
     # The heart is the hold from beat 15 through beat 16. The flop starts after
     # that, and its first frames pass closer than the heart itself.
-    kf = _load_keyframes()
     heart_hold = (dance.audio_time >= kf.t(15)) & (dance.audio_time <= kf.t(16))
     heart_gap = float(np.median(gap[heart_hold])) if np.any(heart_hold) else float("nan")
     lines.append(

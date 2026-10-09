@@ -91,6 +91,20 @@ def test_a_joint_faster_than_the_corner_speed_is_refused(generated) -> None:
         gen.assess(replace(dance, joints=joints))
 
 
+def test_a_claw_through_the_floor_is_refused(generated) -> None:
+    """The floor check can fail. Less shoulder pitch drives the left claw down.
+
+    The standing pitch already rests the pad on the plane. Half a radian less
+    puts the palm through the floor, which a site check does not see.
+    """
+    gen, dance, _ = generated
+    col = dance.names.index("LF_J1_joint")
+    joints = dance.joints.copy()
+    joints[10, col] += 0.5
+    with pytest.raises(ValueError, match="floor"):
+        gen.assess(replace(dance, joints=joints))
+
+
 def test_a_foot_that_leaves_its_stance_point_is_refused(generated) -> None:
     """The foot check can fail. Two centimetres is ten times the 2 mm tolerance."""
     gen, dance, _ = generated
