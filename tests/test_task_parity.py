@@ -57,6 +57,9 @@ NOT_LOCOMOTION = {
     "jumper.dance",
     # The same, each with a clip of its own, imported from rl-wbc-fsm.
     "jumper.dance_brazilian",
+    # An original courtship clip on the same imitation machinery: no command, no
+    # gait, 22 joints, and a reward budget of tracking terms.
+    "jumper.dance_courtship",
     "jumper.dance_dream_wings",
     "jumper.dance_maze",
     "jumper.dance_waist",
