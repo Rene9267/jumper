@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:00d6c67e59781bd5 -->
+<!-- tracks: README.md @ sha256:84a4c4458199a49d -->
 
 ![跳跳](docs/media/jumper-hero-zh.png)
 
@@ -63,7 +63,7 @@
 
 ![斜前方，默认与滨蟹](docs/media/crab-three-quarter.png)
 
-**背甲，俯视。** 大理石纹是细的深色脉络，用盒式贴图，穹顶上没有汇聚点。
+**背甲，俯视。** 大理石纹是重复平铺的细深色脉络。网格就是默认的 STL。
 
 ![背甲俯视](docs/media/crab-close-above.png)
 

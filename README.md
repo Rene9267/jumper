@@ -61,7 +61,7 @@ The stills are the HOME pose on `scenes/default.py`. Default on the left, crab o
 
 ![Three-quarter, default and crab](docs/media/crab-three-quarter.png)
 
-**Shell, from above.** The marble is a fine network of dark veins on a box map, so the dome has no pinch point.
+**Shell, from above.** The marble is a repeated tile of thin dark veins. The meshes are the default STLs.
 
 ![Shell from above](docs/media/crab-close-above.png)
 

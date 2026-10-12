@@ -860,11 +860,11 @@ edits the XML.
 
 ### The crab skin
 
-`assets/jumper/jumper_crab.xml` is a second look for the same robot. `assets/jumper/tools/build_skin.py` loads `jumper.xml` through MjSpec, writes that file, and saves three seeded tiles under `assets/jumper/textures/` (`carapace.png`, `ventral.png`, `tip.png`) plus a box-mapped OBJ for each painted visual mesh under `assets/jumper/skin/`. NumPy and Pillow draw the tiles. The seed is `SEED` in the script, so a re-run reproduces the committed pictures and meshes.
+`assets/jumper/jumper_crab.xml` is a second look for the same robot. `assets/jumper/tools/build_skin.py` loads `jumper.xml` through MjSpec, writes that file, and saves three seeded tiles under `assets/jumper/textures/` (`carapace.png`, `ventral.png`, `tip.png`). NumPy and Pillow draw them. The seed is `SEED` in the script, so a re-run reproduces the committed pictures. The meshes stay the STLs from `jumper.xml`.
 
-The visual STLs have no texture coordinates, so a 2D texture on them is a single texel. A cube map is no better on the shell: it stretches the dome into a pinch. The skin bakes an orthographic box coordinate into each painted mesh (the two axes perpendicular to the triangle, at `UV_PER_METRE` cycles per metre) and samples the tile with `texuniform` off. The tiles repeat, so an edge of the picture meets itself. The geom colour multiplies that texture: a dark rgba turns the shell black, which is why the visual geoms stay a near-white tint and the picture carries the colour.
+The visual STLs have no texture coordinates, so a 2D texture with `texuniform` off is a single texel. A cube map does paint the shell, and it also ignores `texrepeat`, which leaves the dome's projection pinch the size of the geom. The skin is a tileable 2D picture with `texuniform` on and `texrepeat` at 6, so a vein is about a centimetre and the pinch is smaller than a pixel at the one-to-three metre distance of the footage. A direct close-up from above can still show a little convergence. The geom colour multiplies the texture: a dark rgba turns the shell black, which is why the visual geoms stay a near-white tint and the picture carries the colour.
 
-The colours are a Mediterranean shore crab, *Pachygrapsus marmoratus* and *Carcinus aestuarii*: a mid olive-brown carapace with a fine network of thin dark olive-purple veins and small pale flecks, not broad camouflage blotches. The darker half of the carapace sits near sRGB 90–120, so it reads as olive under the default headlight rather than as black:
+The colours are a Mediterranean shore crab, *Pachygrapsus marmoratus* and *Carcinus aestuarii*: a mid olive-brown carapace with thin dark olive-purple veins and small pale flecks. The darker half of the carapace sits near sRGB 90–120, so it reads as olive under the default headlight rather than as black:
 
 | Group | Links | Look |
 |---|---|---|
@@ -877,9 +877,9 @@ The colours are a Mediterranean shore crab, *Pachygrapsus marmoratus* and *Carci
 | tip | `finger` and `finger_tip` | dark brown-black |
 | sensor | display, camera, ToF | left black |
 
-`reflectance` is 0. A mirror of a dark sky pulls the shell toward black, and it is not how chitin looks. Specular on the cream is only a soft highlight, so the thighs and forearms do not go white under the beach sun. Each `*_meshcol` geom keeps a flat rgba of its texture's average colour and no material. `--strip-visual` deletes the visual meshes, and the collision geom that remains is still crab-coloured. Six links have no separate collision hull; those keep the original STL for the collider and a `*_skin` mesh for the picture.
+`reflectance` is 0. A mirror of a dark sky pulls the shell toward black, and it is not how chitin looks. Specular on the cream is only a soft highlight, so the thighs and forearms do not go white under the beach sun. Each `*_meshcol` geom keeps a flat rgba of its texture's average colour and no material. `--strip-visual` deletes the visual meshes, and the collision geom that remains is still crab-coloured.
 
-Collision geometry, `contype`, `conaffinity`, friction, mass, inertia, joints and actuators are the default model's. `tests/test_crab_skin.py` compiles both files and compares those arrays exactly. Visual `geom_size` may differ by the float32 bound of a mesh that now carries texcoords; collision `geom_size` stays exact. The script does the same check before it replaces the XML, and it does not write `jumper.xml`.
+Collision geometry, `contype`, `conaffinity`, friction, mass, inertia, joints and actuators are the default model's. `tests/test_crab_skin.py` compiles both files and compares those arrays exactly, and it compares the visual silhouettes: default and crab have to overlap by more than 98% from the front, the side, three-quarter and above. The script does the same dynamics check before it replaces the XML, and it does not write `jumper.xml`.
 
 Every jumper task registers the skin, the dance tasks included (`jumper.dance`, `jumper.dance_brazilian`, `jumper.dance_dream_wings`, `jumper.dance_maze`, `jumper.dance_waist`). The first asset is still `jumper`, so training, replay and export behave as before until something asks for `crab`. `--list` prints both.
 
@@ -899,8 +899,7 @@ python assets/jumper/tools/build_skin.py
 
 # HOME-pose stills (default beside crab) and a short turntable, under docs/media/.
 # Once on scenes/default.py, once on scenes/beach.py (crab-beach-*.png).
-# Close-ups of the shell from above and from the side: crab-close-above.png,
-# crab-close-side.png, and the crab-beach-close-* pair.
+# Shell close-ups: crab-close-above.png, crab-close-side.png, and crab-beach-close-*.
 # egl first; the script retries with osmesa if that context cannot be created.
 MUJOCO_GL=egl python assets/jumper/tools/build_skin.py --preview
 ```

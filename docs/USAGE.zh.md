@@ -1,4 +1,4 @@
-<!-- tracks: USAGE.md @ sha256:4e28e9c18d8b0e36 -->
+<!-- tracks: USAGE.md @ sha256:34a013e467aead11 -->
 
 # 手册
 
@@ -746,11 +746,11 @@ python tools/hull_collision.py --model assets/<name>/<model>.xml --exclude <mesh
 
 ### 螃蟹外观
 
-`assets/jumper/jumper_crab.xml` 是同一台机器人的另一套外观。`assets/jumper/tools/build_skin.py` 用 MjSpec 读入 `jumper.xml`，写出这份文件，并把按种子生成的三张贴图存到 `assets/jumper/textures/`（`carapace.png`、`ventral.png`、`tip.png`），再为每个上色的视觉网格写一份盒式投影的 OBJ 到 `assets/jumper/skin/`。纹理只用 NumPy 和 Pillow 画。种子是脚本里的 `SEED`，所以再跑一次会得到仓库里已经提交的图和网格。
+`assets/jumper/jumper_crab.xml` 是同一台机器人的另一套外观。`assets/jumper/tools/build_skin.py` 用 MjSpec 读入 `jumper.xml`，写出这份文件，并把按种子生成的三张贴图存到 `assets/jumper/textures/`（`carapace.png`、`ventral.png`、`tip.png`）。纹理只用 NumPy 和 Pillow 画。种子是脚本里的 `SEED`，所以再跑一次会得到仓库里已经提交的那套图。网格仍是 `jumper.xml` 里的 STL。
 
-视觉 STL 没有纹理坐标，所以二维纹理在这些网格上只有一个纹素。立方体贴图在背甲上也不行：穹顶会被拉成一个汇聚点。这套外观给每个上色网格烘焙正交盒式坐标（三角形法线垂直的两个轴，每米 `UV_PER_METRE` 个周期），并关掉 `texuniform` 来采样那张可平铺的图。geom 的颜色会乘上这张纹理：深色 rgba 会把背甲压成黑色，所以视觉 geom 保持接近白色的淡色，颜色由图片本身来带。
+视觉 STL 没有纹理坐标，所以关掉 `texuniform` 的二维纹理只有一个纹素。立方体贴图能贴上背甲，但它不理会 `texrepeat`，穹顶上的汇聚就会和整个几何体一样大。这套外观用一张可平铺的二维图，打开 `texuniform`，`texrepeat` 为 6，脉络大约一厘米，在成片时一两到三米的距离上汇聚比一个像素还小。从正上方极近看，仍可能看出一点汇聚。geom 的颜色会乘上这张纹理：深色 rgba 会把背甲压成黑色，所以视觉 geom 保持接近白色的淡色，颜色由图片本身来带。
 
-颜色取自地中海滨蟹 *Pachygrapsus marmoratus* 和 *Carcinus aestuarii*：中等橄榄棕色的背甲上是细的深橄榄紫色脉络和小的浅色斑点，不是大块迷彩。背甲较暗的一半大约在 sRGB 90–120，这样在默认头灯下读成橄榄色，而不是黑色：
+颜色取自地中海滨蟹 *Pachygrapsus marmoratus* 和 *Carcinus aestuarii*：中等橄榄棕色的背甲上是细的深橄榄紫色脉络和小的浅色斑点。背甲较暗的一半大约在 sRGB 90–120，这样在默认头灯下读成橄榄色，而不是黑色：
 
 | 分组 | 连杆 | 外观 |
 |---|---|---|
@@ -763,9 +763,9 @@ python tools/hull_collision.py --model assets/<name>/<model>.xml --exclude <mesh
 | tip | `finger` 和 `finger_tip` | 深褐近黑 |
 | sensor | 显示屏、相机、ToF | 保持黑色 |
 
-`reflectance` 是 0。对深色天空的镜像会把背甲拉向黑色，甲壳也不是那样反光的。奶油色上的高光很弱，大腿和前臂在沙滩太阳下不会变成白色塑料。每个 `*_meshcol` geom 用纹理的平均色作为纯色 rgba，并且不带材质。`--strip-visual` 删掉视觉网格之后，留下来的碰撞 geom 仍然是滨蟹的颜色。有六个连杆没有单独的碰撞外壳；它们的碰撞仍用原来的 STL，贴图用另一份 `*_skin` 网格。
+`reflectance` 是 0。对深色天空的镜像会把背甲拉向黑色，甲壳也不是那样反光的。奶油色上的高光很弱，大腿和前臂在沙滩太阳下不会变成白色塑料。每个 `*_meshcol` geom 用纹理的平均色作为纯色 rgba，并且不带材质。`--strip-visual` 删掉视觉网格之后，留下来的碰撞 geom 仍然是滨蟹的颜色。
 
-碰撞几何、`contype`、`conaffinity`、摩擦、质量、惯量、关节和执行器都是默认模型的。`tests/test_crab_skin.py` 编译两份文件并精确比较这些数组。视觉 `geom_size` 可能差在带纹理坐标的网格的 float32 包围盒上；碰撞 `geom_size` 保持精确。脚本在替换 XML 之前做同样的检查，并且不写 `jumper.xml`。
+碰撞几何、`contype`、`conaffinity`、摩擦、质量、惯量、关节和执行器都是默认模型的。`tests/test_crab_skin.py` 编译两份文件并精确比较这些数组，还比较视觉剪影：正面、侧面、斜前方和上方，默认外观和滨蟹的重叠要超过 98%。脚本在替换 XML 之前做同样的动力学检查，并且不写 `jumper.xml`。
 
 每一个 jumper 任务都注册了这套外观，舞蹈任务也在内（`jumper.dance`、`jumper.dance_brazilian`、`jumper.dance_dream_wings`、`jumper.dance_maze`、`jumper.dance_waist`）。表里的第一项仍是 `jumper`，所以训练、回放和导出在有人指定 `crab` 之前保持原样。`--list` 会把两个都列出来。
 
@@ -785,7 +785,7 @@ python assets/jumper/tools/build_skin.py
 
 # HOME 姿态的静帧（默认外观和滨蟹并排）和一段短转台，写到 docs/media/。
 # 一份在 scenes/default.py 上，一份在 scenes/beach.py 上（crab-beach-*.png）。
-# 背甲俯视和侧视特写：crab-close-above.png、crab-close-side.png，以及 crab-beach-close-*。
+# 背甲特写：crab-close-above.png、crab-close-side.png，以及 crab-beach-close-*。
 # 先用 egl；建不起这个上下文时脚本改用 osmesa 再试一次。
 MUJOCO_GL=egl python assets/jumper/tools/build_skin.py --preview
 ```

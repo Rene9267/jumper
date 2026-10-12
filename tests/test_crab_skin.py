@@ -69,31 +69,12 @@ def test_crab_skin_matches_jumper_physics() -> None:
         assert _names(base, obj, count) == _names(crab, obj, count)
     assert base.nq == crab.nq and base.nv == crab.nv
 
-    mod = _builder()
-    fields = mod.PHYSICS_FIELDS
-    assert "geom_size" not in fields
+    fields = _builder().PHYSICS_FIELDS
     for name in fields:
         got = np.asarray(getattr(base, name))
         other = np.asarray(getattr(crab, name))
         assert got.shape == other.shape, name
         np.testing.assert_array_equal(got, other, err_msg=name)
-
-    # Visual meshes are rewritten as OBJ so they can carry texcoords, and
-    # geom_size is the float32 bound of those vertices. Collision geoms stay
-    # the STLs and compare exact. The control rejects a millimetre, so the
-    # tolerance is not a way for a skin to resize the robot.
-    assert mod.geom_size_error(base, crab) is None
-    names = _names(base, mujoco.mjtObj.mjOBJ_GEOM, base.ngeom)
-    col = next(i for i, name in enumerate(names) if name.endswith("_meshcol"))
-    saved = np.array(crab.geom_size[col], copy=True)
-    crab.geom_size[col, 0] = saved[0] + 1e-4
-    assert mod.geom_size_error(base, crab) is not None
-    crab.geom_size[col] = saved
-    vis = next(i for i, name in enumerate(names) if name == "upper_shell_link_visual")
-    saved = np.array(crab.geom_size[vis], copy=True)
-    crab.geom_size[vis, 2] = saved[2] + 1e-3
-    assert mod.geom_size_error(base, crab) is not None
-    crab.geom_size[vis] = saved
 
     # Control: the same comparison rejects a one-body mass change, so an empty
     # field list or a model compared with itself is not what passed above.
@@ -140,13 +121,14 @@ def test_sensors_stay_black_and_groups_take_their_materials() -> None:
     assert tip < shell < ventral
 
 
-def test_the_shell_is_box_mapped_and_the_colours_are_not_black() -> None:
-    """A cube map pinches the dome, and a dark rgba makes a texture read as black.
+def test_the_marble_is_a_repeated_tile_and_the_colours_are_not_black() -> None:
+    """No baked texcoords, and a dark rgba would make the tile read as black.
 
-    The visual STLs have no texcoords. The skin bakes box coordinates into OBJ
-    copies and samples a tileable picture with `texuniform` off. The carapace's
-    darker half has to land near sRGB 90–120, and the belly, thighs and forearms
-    stay a pale cream rather than white or a saturated orange.
+    A cube map ignores `texrepeat`, so the pinch stays the size of the shell.
+    The skin is a 2D tile with `texuniform` and a repeat large enough that the
+    veins are small. The meshes are still the STLs. The carapace's darker half
+    has to land near sRGB 90–120, and the belly, thighs and forearms stay a
+    pale cream rather than white or a saturated orange.
     """
     base = mujoco.MjModel.from_xml_path(str(JUMPER_XML))
     assert int(np.max(base.mesh_texcoordnum)) == 0, "the premise: the STLs grew UVs"
@@ -155,32 +137,22 @@ def test_the_shell_is_box_mapped_and_the_colours_are_not_black() -> None:
     flat = int(mujoco.mjtTexture.mjTEXTURE_2D)
     assert crab.ntex == 3
     assert {int(t) for t in crab.tex_type} == {flat}
-    assert not bool(np.any(crab.mat_texuniform))
+    assert int(np.max(crab.mesh_texcoordnum)) == 0, "the skin must not replace the STLs"
+    assert bool(np.all(crab.mat_texuniform))
+    assert float(np.min(crab.mat_texrepeat)) >= 4.0
     assert float(np.max(crab.mat_reflectance)) == 0.0
+    assert not (REPO / "assets" / "jumper" / "skin").exists()
 
     mod = _builder()
-    shell = mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MESH, "upper_shell_link")
-    assert int(crab.mesh_texcoordnum[shell]) > 1000
-    sensor = mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MESH, "display_module_link")
-    assert int(crab.mesh_texcoordnum[sensor]) == 0
-    # A collider that shares its STL with the visual keeps that STL. The texcoords
-    # live on a second mesh, so rewriting the picture cannot move the hull.
-    pad = mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MESH, "LF_palm_pad_b_link")
-    assert int(crab.mesh_texcoordnum[pad]) == 0
-    assert int(crab.mesh_texcoordnum[
-        mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MESH, "LF_palm_pad_b_link_skin")
-    ]) > 0
-
     assert mod.appearance("LM_thigh_link") == "leg_joint"
     assert mod.appearance("LF_forearm_link") == "claw_joint"
     assert mod.appearance("LM_calf_link") == "leg"
-
     for i in range(crab.ngeom):
         name = mujoco.mj_id2name(crab, mujoco.mjtObj.mjOBJ_GEOM, i)
         body = mujoco.mj_id2name(crab, mujoco.mjtObj.mjOBJ_BODY, int(crab.geom_bodyid[i]))
         if not name.endswith("_visual") or mod.appearance(body) == "sensor":
             continue
-        # Near white. A dark rgba multiplies the picture and the marble goes black.
+        # Near white. A dark rgba multiplies the tile and the marble goes black.
         assert float(crab.geom_rgba[i, :3].min()) > 0.85, name
 
     carapace = np.asarray(Image.open(TEXTURES / "carapace.png")).reshape(-1, 3)
@@ -238,13 +210,9 @@ def compare_committed_skin() -> None:
         have = np.asarray(Image.open(TEXTURES / f"{name}.png"))
         if got.shape != have.shape or not np.array_equal(got, have):
             raise SystemExit(f"texture {name} does not match the generator")
-    for name, got in mod.baked_meshes().items():
-        path = mod.SKIN_DIR / name
-        if got != path.read_bytes():
-            raise SystemExit(f"mesh {name} does not match the generator")
     spec = mujoco.MjSpec.from_file(str(JUMPER_XML))
     images = {name: draw() for name, draw in mod.TEXTURES.items()}
-    mod._paint(spec, images)
+    mod._paint(spec, images, TEXTURES)
     fresh = mod._xml_text(spec)
     disk = CRAB_XML.read_text(encoding="utf-8")
     if fresh != disk:
@@ -255,6 +223,93 @@ def test_committed_skin_matches_the_generator() -> None:
     """A hand-edited XML or PNG does not look hand-edited. Regenerating does."""
     probe = subprocess.run(
         [sys.executable, "-c", "import tests.test_crab_skin as t; t.compare_committed_skin()"],
+        check=False, cwd=REPO, capture_output=True, text=True,
+    )
+    assert probe.returncode == 0, probe.stderr or probe.stdout
+
+
+def measure_silhouette() -> None:
+    """HOME-pose visual masks. Default and crab must overlap by more than 98%.
+
+    Rewriting a mesh from the compiled vertices places it twice, and the crab
+    falls apart. The masks then miss. A control slides the crab sideways and
+    requires that same comparison to fail, so two empty masks cannot pass.
+    """
+    from tasks.jumper.common.constants import HOME, STAND_Z
+
+    def pose(path: Path) -> tuple[mujoco.MjModel, mujoco.MjData]:
+        model = mujoco.MjModel.from_xml_path(str(path))
+        data = mujoco.MjData(model)
+        mujoco.mj_resetData(model, data)
+        data.qpos[0:3] = (0.0, 0.0, float(STAND_Z))
+        data.qpos[3:7] = (1.0, 0.0, 0.0, 0.0)
+        for name, value in HOME.items():
+            jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            data.qpos[int(model.jnt_qposadr[jid])] = value
+        mujoco.mj_forward(model, data)
+        return model, data
+
+    def mask(model: mujoco.MjModel, data: mujoco.MjData, view: tuple[float, float, float]):
+        width, height = 320, 240
+        model.vis.global_.offwidth = max(int(model.vis.global_.offwidth), width)
+        model.vis.global_.offheight = max(int(model.vis.global_.offheight), height)
+        renderer = mujoco.Renderer(model, height=height, width=width)
+        segment = mujoco.Renderer(model, height=height, width=width)
+        segment.enable_segmentation_rendering()
+        option = mujoco.MjvOption()
+        option.geomgroup[1] = 0
+        cam = mujoco.MjvCamera()
+        cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+        cam.lookat[:] = (0.0, 0.0, 0.08)
+        cam.azimuth, cam.elevation, cam.distance = view
+        try:
+            renderer.update_scene(data, camera=cam, scene_option=option)
+            segment.update_scene(data, camera=cam, scene_option=option)
+            seg = segment.render()
+        finally:
+            renderer.close()
+            segment.close()
+        geom = int(mujoco.mjtObj.mjOBJ_GEOM)
+        return seg[:, :, 1] == geom
+
+    def overlap(a: np.ndarray, b: np.ndarray) -> tuple[float, int]:
+        union = int(np.logical_or(a, b).sum())
+        if union == 0:
+            return 0.0, 0
+        inter = int(np.logical_and(a, b).sum())
+        return inter / union, union
+
+    views = (
+        ("front", (180.0, -14.0, 0.58)),
+        ("side", (90.0, -8.0, 0.62)),
+        ("three-quarter", (142.0, -18.0, 0.60)),
+        ("above", (32.0, -52.0, 0.28)),
+    )
+    base_m, base_d = pose(JUMPER_XML)
+    crab_m, crab_d = pose(CRAB_XML)
+    above = None
+    for name, view in views:
+        iou, union = overlap(mask(base_m, base_d, view), mask(crab_m, crab_d, view))
+        if union < 500:
+            raise SystemExit(f"{name} silhouette is empty ({union} px)")
+        if iou <= 0.98:
+            raise SystemExit(f"{name} silhouette overlap {iou:.4f}, want > 0.98")
+        if name == "above":
+            above = view
+    crab_d.qpos[0] += 0.08
+    mujoco.mj_forward(crab_m, crab_d)
+    iou, _union = overlap(mask(base_m, base_d, above), mask(crab_m, crab_d, above))
+    if iou > 0.98:
+        raise SystemExit(f"control: a crab slid sideways still overlapped ({iou:.4f})")
+
+
+def test_crab_silhouette_matches_the_default() -> None:
+    """The painted robot is the same shape. An exploded mesh would still compile."""
+    probe = subprocess.run(
+        [sys.executable, "-c", (
+            "import os; os.environ['MUJOCO_GL']='egl'; "
+            "import tests.test_crab_skin as t; t.measure_silhouette()"
+        )],
         check=False, cwd=REPO, capture_output=True, text=True,
     )
     assert probe.returncode == 0, probe.stderr or probe.stdout
