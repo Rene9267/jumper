@@ -121,6 +121,53 @@ def test_sensors_stay_black_and_groups_take_their_materials() -> None:
     assert tip < shell < ventral
 
 
+def test_the_shell_is_a_cube_map_and_the_colours_are_not_black() -> None:
+    """No texcoords, so a 2D texture is one texel, and a dark rgba makes it black.
+
+    The committed carapace's darker half has to land near sRGB 90–120, and the
+    belly has to stay a pale cream rather than a saturated orange. A cube
+    material with `texuniform` is what actually paints the mesh.
+    """
+    base = mujoco.MjModel.from_xml_path(str(JUMPER_XML))
+    assert int(np.max(base.mesh_texcoordnum)) == 0, "the premise: the STLs grew UVs"
+
+    crab = mujoco.MjModel.from_xml_path(str(CRAB_XML))
+    cube = int(mujoco.mjtTexture.mjTEXTURE_CUBE)
+    assert crab.ntex == 3
+    assert {int(t) for t in crab.tex_type} == {cube}
+    assert bool(np.all(crab.mat_texuniform))
+    assert float(np.max(crab.mat_reflectance)) == 0.0
+
+    mod = _builder()
+    for i in range(crab.ngeom):
+        name = mujoco.mj_id2name(crab, mujoco.mjtObj.mjOBJ_GEOM, i)
+        body = mujoco.mj_id2name(crab, mujoco.mjtObj.mjOBJ_BODY, int(crab.geom_bodyid[i]))
+        if not name.endswith("_visual") or mod.appearance(body) == "sensor":
+            continue
+        # Near white. A dark rgba multiplies the cube and the marble goes black.
+        assert float(crab.geom_rgba[i, :3].min()) > 0.85, name
+
+    carapace = np.concatenate(
+        [np.asarray(Image.open(TEXTURES / f"carapace_{face}.png")).reshape(-1, 3)
+         for face in mod.FACE_ORDER],
+        axis=0,
+    )
+    lum = carapace.mean(axis=1)
+    dark = carapace[lum <= np.median(lum)].mean()
+    assert 90.0 <= dark <= 120.0, dark
+    assert float(lum.std()) > 12.0, "a flat brown would pass the mean and show no marble"
+
+    ventral = np.concatenate(
+        [np.asarray(Image.open(TEXTURES / f"ventral_{face}.png")).reshape(-1, 3)
+         for face in mod.FACE_ORDER],
+        axis=0,
+    ).astype(np.float64)
+    hi = ventral.max(axis=1)
+    sat = (hi - ventral.min(axis=1)) / np.maximum(hi, 1.0)
+    assert float(sat.mean()) < 0.25, sat.mean()
+    assert float(ventral.mean()) > 190.0
+
+
 def test_every_link_has_a_role() -> None:
     """A link the painter does not know would keep the factory red and look intentional."""
     mod = _builder()
@@ -158,10 +205,10 @@ def compare_committed_skin() -> None:
     """
     mod = _builder()
     for name, draw in mod.TEXTURES.items():
-        got = draw()
-        have = np.asarray(Image.open(TEXTURES / f"{name}.png"))
-        if got.shape != have.shape or not np.array_equal(got, have):
-            raise SystemExit(f"texture {name} does not match the generator")
+        for face, got in draw().items():
+            have = np.asarray(Image.open(TEXTURES / f"{name}_{face}.png"))
+            if got.shape != have.shape or not np.array_equal(got, have):
+                raise SystemExit(f"texture {name}_{face} does not match the generator")
     spec = mujoco.MjSpec.from_file(str(JUMPER_XML))
     images = {name: draw() for name, draw in mod.TEXTURES.items()}
     mod._paint(spec, images, TEXTURES)

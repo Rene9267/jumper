@@ -11,19 +11,26 @@ and refuses to keep an XML whose dynamics differ.
     python assets/jumper/tools/build_skin.py --preview
 
 The colours follow *Pachygrapsus marmoratus* and *Carcinus aestuarii*: a dark
-olive / brown-purple marbled carapace, a cream-ochre underside and leg joints,
-and dark brown-black claw tips. The display, the camera and the ToF stay black,
-which is what keeps the machine recognisable.
+olive / brown-purple marbled carapace, a pale cream-ochre underside and leg
+joints, and dark brown-black claw tips. The display, the camera and the ToF
+stay black, which is what keeps the machine recognisable.
 
-Textures are procedural (NumPy and Pillow only) from `SEED`, so a re-run is the
-same picture. Visual geoms take a material. `*_meshcol` geoms take the matching
+The visual STLs have no texture coordinates (`mesh_texcoordnum` is 0 on every
+mesh). A 2D texture on those geoms is one texel, so the marble never appears.
+MuJoCo maps a cube texture from the mesh coordinates instead, and `texuniform`
+scales that map to the geom. Each material is six faces of one seeded picture
+(NumPy and Pillow only, seed `SEED`).
+
+The geom colour multiplies the texture. Leaving the factory red, or writing the
+texture's own dark average into `rgba`, crushes the shell toward black and
+pushes a warm belly texel toward orange. Visual geoms are therefore a near-white
+tint, and the picture carries the colour. `*_meshcol` geoms take the matching
 flat rgba and no material, so a camera that has had the visual meshes stripped
-is still crab-coloured. A material wins over rgba (`scenes/plain.py`), which is
-why the flat colour lives only on the collision geoms.
+is still crab-coloured, and a material cannot override that rgba.
 
-`--preview` draws the HOME pose off-screen: front, side and three-quarter, the
-default model beside the crab, plus a short turntable. `MUJOCO_GL=egl`, and
-osmesa if that context cannot be created.
+`--preview` draws the HOME pose off-screen under `scenes/default.py` and
+`scenes/beach.py`: front, side, three-quarter, a shell close-up and a short
+turntable. `MUJOCO_GL=egl`, and osmesa if that context cannot be created.
 """
 
 from __future__ import annotations
@@ -97,27 +104,33 @@ PHYSICS_FIELDS = (
 
 @dataclass(frozen=True)
 class Finish:
-    """One material, and the flat rgba a stripped view uses in its place."""
+    """One material, and the tint a visual geom multiplies the texture by.
+
+    `tint` stays near white. The picture carries the colour; the tint only
+    separates shell, leg and claw by a small hue shift. `reflectance` is 0:
+    MuJoCo's reflection is a mirror of the whole scene, and on a dark sky it
+    pulls the shell toward black.
+    """
 
     texture: str
     tint: tuple[float, float, float]
-    texrepeat: tuple[float, float]
     specular: float
     shininess: float
-    reflectance: float
     roughness: float
 
 
-#: `tint` multiplies the texture. It is kept near white: the picture carries the
-#: colour, and the tint only separates shell, leg and claw by a small hue shift.
+#: Cube faces, in the order `cubefiles` expects. Measured on a box with one
+#: colour per file: right/left are ±X, up/down are ±Y, front/back are ±Z.
+FACE_ORDER = ("right", "left", "up", "down", "front", "back")
+
 MATERIALS: dict[str, Finish] = {
-    "shell": Finish("carapace", (1.0, 1.0, 1.0), (1.35, 1.35), 0.26, 0.30, 0.06, 0.52),
-    "leg": Finish("carapace", (0.94, 1.0, 0.86), (1.9, 1.9), 0.18, 0.22, 0.04, 0.58),
-    "claw": Finish("carapace", (1.0, 0.90, 0.96), (1.55, 1.55), 0.32, 0.40, 0.08, 0.46),
-    "underside": Finish("ventral", (1.0, 1.0, 1.0), (1.25, 1.25), 0.10, 0.12, 0.02, 0.72),
-    "leg_joint": Finish("ventral", (1.0, 0.97, 0.90), (1.7, 1.7), 0.12, 0.14, 0.02, 0.68),
-    "claw_joint": Finish("ventral", (1.0, 0.98, 0.92), (1.55, 1.55), 0.14, 0.16, 0.03, 0.64),
-    "tip": Finish("tip", (1.0, 1.0, 1.0), (2.2, 2.2), 0.46, 0.58, 0.12, 0.30),
+    "shell": Finish("carapace", (1.0, 1.0, 1.0), 0.18, 0.28, 0.55),
+    "leg": Finish("carapace", (0.96, 1.0, 0.90), 0.14, 0.22, 0.62),
+    "claw": Finish("carapace", (1.0, 0.95, 0.97), 0.20, 0.32, 0.48),
+    "underside": Finish("ventral", (1.0, 1.0, 1.0), 0.06, 0.12, 0.75),
+    "leg_joint": Finish("ventral", (1.0, 0.98, 0.96), 0.07, 0.14, 0.72),
+    "claw_joint": Finish("ventral", (1.0, 0.99, 0.97), 0.08, 0.16, 0.68),
+    "tip": Finish("tip", (1.0, 1.0, 1.0), 0.28, 0.42, 0.38),
 }
 
 
@@ -197,31 +210,6 @@ def _fbm(
     return acc / total
 
 
-def _sample(img: np.ndarray, y: np.ndarray, x: np.ndarray) -> np.ndarray:
-    """Bilinear sample. `y` and `x` are in ``[0, 1)`` and wrap."""
-    height, width = img.shape
-    ys = np.minimum(np.mod(y, 1.0) * height, height - 1e-6)
-    xs = np.minimum(np.mod(x, 1.0) * width, width - 1e-6)
-    y0 = np.floor(ys).astype(np.int32)
-    x0 = np.floor(xs).astype(np.int32)
-    fy = ys - y0
-    fx = xs - x0
-    y1 = (y0 + 1) % height
-    x1 = (x0 + 1) % width
-    return (
-        img[y0, x0] * (1.0 - fy) * (1.0 - fx)
-        + img[y0, x1] * (1.0 - fy) * fx
-        + img[y1, x0] * fy * (1.0 - fx)
-        + img[y1, x1] * fy * fx
-    )
-
-
-def _unit(h: int, w: int) -> tuple[np.ndarray, np.ndarray]:
-    y = np.broadcast_to(np.linspace(0.0, 1.0, h, endpoint=False)[:, None], (h, w))
-    x = np.broadcast_to(np.linspace(0.0, 1.0, w, endpoint=False)[None, :], (h, w))
-    return y, x
-
-
 def _lerp(a: np.ndarray, b: np.ndarray, t: np.ndarray) -> np.ndarray:
     tt = t[..., None]
     return a * (1.0 - tt) + b * tt
@@ -229,14 +217,6 @@ def _lerp(a: np.ndarray, b: np.ndarray, t: np.ndarray) -> np.ndarray:
 
 def _u8(color: np.ndarray) -> np.ndarray:
     return np.clip(np.rint(np.clip(color, 0.0, 1.0) * 255.0), 0, 255).astype(np.uint8)
-
-
-def _warp(h: int, w: int, rng: np.random.Generator, scale: float = 0.22):
-    y, x = _unit(h, w)
-    wx = _fbm(h, w, rng, octaves=4, base=2) - 0.5
-    wy = _fbm(h, w, rng, octaves=4, base=2) - 0.5
-    field = _fbm(h, w, rng, octaves=6, base=2)
-    return _sample(field, y + scale * wy, x + scale * wx), y, x
 
 
 def _span(v: np.ndarray) -> np.ndarray:
@@ -250,92 +230,106 @@ def _span(v: np.ndarray) -> np.ndarray:
     return np.clip((v - lo) / (hi - lo + 1e-8), 0.0, 1.0)
 
 
-def carapace_image(size: int = SIZE) -> np.ndarray:
-    """Dark olive and brown-purple marble, with tan veins and small pits.
+def _rgb(r: float, g: float, b: float) -> np.ndarray:
+    """sRGB bytes as a linear mix weight. The PNG stores sRGB; MuJoCo is told so."""
+    return np.array([r, g, b]) / 255.0
 
-    The bands are wide on purpose. On the robot the shell is a few centimetres
-    across, and a texture whose values all sit near one brown reads as flat paint.
+
+def _carapace(size: int, salt: int) -> np.ndarray:
+    """Dark olive and brown-purple marble, with tan blotches large enough to read.
+
+    The low octaves are the blotches. A face is mapped across one side of a geom
+    a few centimetres wide, and a texture whose contrast lives in the fine grain
+    averages out to one brown. The dark half of the picture is meant to sit near
+    sRGB 90–120: lower than that, and the default headlight renders it as black.
     """
     h = w = size
-    rng = _rng(1)
-    base, y, x = _warp(h, w, rng, 0.30)
-    blot = _sample(
-        _fbm(h, w, rng, octaves=4, base=2),
-        y + 0.18 * (_fbm(h, w, rng, octaves=3, base=2) - 0.5),
-        x + 0.22 * (_fbm(h, w, rng, octaves=3, base=2) - 0.5),
-    )
-    tone = _span(base)
-    region = _span(blot)
-    grain = _value_noise(h, w, 96, rng)
-    pits = np.clip((_value_noise(h, w, 40, rng) - 0.62) / 0.38, 0.0, 1.0)
+    rng = _rng(100 + salt)
+    tone = _span(_fbm(h, w, rng, octaves=5, base=3))
+    region = _span(_fbm(h, w, rng, octaves=4, base=2))
+    grain = _value_noise(h, w, 48, rng)
 
-    ink = np.array([0.06, 0.045, 0.04])
-    olive = np.array([0.20, 0.25, 0.10])
-    purple = np.array([0.26, 0.11, 0.15])
-    rust = np.array([0.33, 0.16, 0.08])
-    tan = np.array([0.66, 0.52, 0.30])
+    floor = _rgb(98, 112, 64)
+    olive = _rgb(118, 134, 74)
+    purple = _rgb(132, 90, 104)
+    brown = _rgb(140, 102, 68)
+    tan = _rgb(198, 166, 114)
 
-    ground = _lerp(purple, olive, region)
-    ground = _lerp(ground, rust, np.clip(1.0 - np.abs(region - 0.35) * 2.5, 0.0, 1.0) * 0.7)
-    # Dark grooves in the low third, tan marble only in the top of the field.
-    color = _lerp(ink, ground, np.clip(tone * 1.55, 0.0, 1.0))
-    color = _lerp(color, tan, np.clip((tone - 0.62) / 0.38, 0.0, 1.0))
-    color *= (0.90 + 0.16 * grain)[..., None]
-    color *= (1.0 - 0.35 * pits)[..., None]
-    return _u8(color)
-
-
-def ventral_image(size: int = SIZE) -> np.ndarray:
-    """Cream-ochre underside: pale ground, warmer blotches, a few stains."""
-    h = w = size
-    rng = _rng(2)
-    field, y, x = _warp(h, w, rng, 0.16)
-    stain = _sample(_fbm(h, w, rng, octaves=3, base=3), y, x)
-    grain = _value_noise(h, w, 80, rng)
-
-    ochre = np.array([0.72, 0.54, 0.30])
-    cream = np.array([0.90, 0.82, 0.64])
-    pale = np.array([0.94, 0.89, 0.76])
-    mark = np.array([0.52, 0.38, 0.22])
-
-    color = _lerp(ochre, cream, np.clip(field * 1.15, 0.0, 1.0))
-    color = _lerp(color, pale, np.clip((field - 0.55) * 2.2, 0.0, 1.0) * 0.65)
-    color = _lerp(color, mark, np.clip((stain - 0.68) * 4.0, 0.0, 1.0) * 0.45)
+    ground = _lerp(olive, purple, region)
+    rust = np.clip(1.0 - np.abs(region - 0.42) * 2.4, 0.0, 1.0)
+    ground = _lerp(ground, brown, rust * 0.65)
+    color = _lerp(floor, ground, np.clip(tone * 1.35, 0.0, 1.0))
+    color = _lerp(color, tan, np.clip((tone - 0.52) / 0.32, 0.0, 1.0))
     color *= (0.96 + 0.08 * grain)[..., None]
     return _u8(color)
 
 
-def tip_image(size: int = SIZE) -> np.ndarray:
-    """Dark brown-black chitin, with a little grain so the tip is not plastic."""
+def _ventral(size: int, salt: int) -> np.ndarray:
+    """Pale cream underside. Warm stains stay desaturated, so they do not go orange."""
     h = w = size
-    rng = _rng(3)
-    y, x = _unit(h, w)
-    field = _span(_fbm(h, w, rng, octaves=5, base=3))
-    streak = _span(_sample(field, y, np.mod(x * 0.35, 1.0)))
-    grain = _value_noise(h, w, 128, rng)
+    rng = _rng(200 + salt)
+    field = _span(_fbm(h, w, rng, octaves=4, base=3))
+    stain = _span(_fbm(h, w, rng, octaves=3, base=2))
+    grain = _value_noise(h, w, 40, rng)
 
-    black = np.array([0.025, 0.018, 0.016])
-    brown = np.array([0.22, 0.09, 0.04])
-    color = _lerp(black, brown, streak)
-    color *= (0.82 + 0.36 * grain)[..., None]
+    buff = _rgb(214, 198, 172)
+    cream = _rgb(230, 218, 196)
+    pale = _rgb(240, 232, 216)
+    mark = _rgb(188, 166, 138)
+
+    color = _lerp(buff, cream, field)
+    color = _lerp(color, pale, np.clip((field - 0.45) * 2.0, 0.0, 1.0) * 0.75)
+    color = _lerp(color, mark, np.clip((stain - 0.74) * 5.0, 0.0, 1.0) * 0.45)
+    color *= (0.985 + 0.03 * grain)[..., None]
     return _u8(color)
 
 
+def _tip(size: int, salt: int) -> np.ndarray:
+    """Dark brown-black chitin, with a little grain so the tip is not plastic."""
+    h = w = size
+    rng = _rng(300 + salt)
+    field = _span(_fbm(h, w, rng, octaves=4, base=4))
+    grain = _value_noise(h, w, 64, rng)
+    color = _lerp(_rgb(34, 18, 12), _rgb(78, 42, 24), field)
+    color *= (0.86 + 0.28 * grain)[..., None]
+    return _u8(color)
+
+
+def _faces(draw, size: int) -> dict[str, np.ndarray]:
+    return {face: draw(size, i) for i, face in enumerate(FACE_ORDER)}
+
+
+def carapace_faces(size: int = SIZE) -> dict[str, np.ndarray]:
+    return _faces(_carapace, size)
+
+
+def ventral_faces(size: int = SIZE) -> dict[str, np.ndarray]:
+    return _faces(_ventral, size)
+
+
+def tip_faces(size: int = SIZE) -> dict[str, np.ndarray]:
+    return _faces(_tip, size)
+
+
 TEXTURES = {
-    "carapace": carapace_image,
-    "ventral": ventral_image,
-    "tip": tip_image,
+    "carapace": carapace_faces,
+    "ventral": ventral_faces,
+    "tip": tip_faces,
 }
 
 
-def flat_rgba(image: np.ndarray, tint: tuple[float, float, float]) -> list[float]:
-    """The colour a texture averages to, times the material tint.
+def _stack(faces: dict[str, np.ndarray]) -> np.ndarray:
+    return np.concatenate([faces[face].reshape(-1, 3) for face in FACE_ORDER], axis=0)
+
+
+def flat_rgba(faces: dict[str, np.ndarray], tint: tuple[float, float, float]) -> list[float]:
+    """The colour a cube averages to, times the material tint.
 
     `--strip-visual` drops the meshes that carry the material, and the collision
     geom that remains has no texture. This rgba is that average, so the flat
     stand-in is the same colour the picture reads as.
     """
-    mean = image.reshape(-1, 3).astype(np.float64).mean(axis=0) / 255.0
+    mean = _stack(faces).astype(np.float64).mean(axis=0) / 255.0
     rgb = np.clip(mean * np.asarray(tint, np.float64), 0.0, 1.0)
     return [float(rgb[0]), float(rgb[1]), float(rgb[2]), 1.0]
 
@@ -343,27 +337,33 @@ def flat_rgba(image: np.ndarray, tint: tuple[float, float, float]) -> list[float
 # ── Model ─────────────────────────────────────────────────────────────────
 
 
-def _save_textures(texture_dir: Path, size: int = SIZE) -> dict[str, np.ndarray]:
+def _save_textures(texture_dir: Path, size: int = SIZE) -> dict[str, dict[str, np.ndarray]]:
     texture_dir.mkdir(parents=True, exist_ok=True)
+    # The previous skin was three 2D images. A re-run must not leave them beside
+    # the cube faces, where a reader would take the stale file for the texture.
+    for stale in ("carapace.png", "ventral.png", "tip.png"):
+        (texture_dir / stale).unlink(missing_ok=True)
     images = {}
     for name, fn in TEXTURES.items():
-        image = fn(size)
-        Image.fromarray(image, mode="RGB").save(texture_dir / f"{name}.png")
-        images[name] = image
+        faces = fn(size)
+        images[name] = faces
+        for face, image in faces.items():
+            Image.fromarray(image, mode="RGB").save(texture_dir / f"{name}_{face}.png")
     return images
 
 
-def _paint(spec: mujoco.MjSpec, images: dict[str, np.ndarray], texture_dir: Path) -> None:
-    for name, image in images.items():
-        tex = spec.add_texture(
-            name=name,
-            type=mujoco.mjtTexture.mjTEXTURE_2D,
-            builtin=mujoco.mjtBuiltin.mjBUILTIN_NONE,
-            file=str((texture_dir / f"{name}.png").resolve()),
-            width=int(image.shape[1]),
-            height=int(image.shape[0]),
-            nchannel=3,
-        )
+def _paint(spec: mujoco.MjSpec, images: dict[str, dict[str, np.ndarray]], texture_dir: Path) -> None:
+    for name in images:
+        tex = spec.add_texture()
+        tex.name = name
+        tex.type = mujoco.mjtTexture.mjTEXTURE_CUBE
+        tex.builtin = mujoco.mjtBuiltin.mjBUILTIN_NONE
+        tex.nchannel = 3
+        # Absolute while the file is open: to_xml reads the pixels. _xml_text
+        # writes the path back relative to the XML.
+        tex.cubefiles = [
+            str((texture_dir / f"{name}_{face}.png").resolve()) for face in FACE_ORDER
+        ]
         # AUTO is written back as linear, and a linear reading of an sRGB PNG
         # comes out dark and dull. The files are sRGB.
         tex.colorspace = mujoco.mjtColorSpace.mjCOLORSPACE_SRGB
@@ -376,11 +376,11 @@ def _paint(spec: mujoco.MjSpec, images: dict[str, np.ndarray], texture_dir: Path
         mat = spec.add_material(
             name=f"crab_{role}",
             rgba=[*finish.tint, 1.0],
-            texuniform=False,
-            texrepeat=list(finish.texrepeat),
+            texuniform=True,
+            texrepeat=[1.0, 1.0],
             specular=finish.specular,
             shininess=finish.shininess,
-            reflectance=finish.reflectance,
+            reflectance=0.0,
         )
         mat.roughness = finish.roughness
         mat.metallic = 0.0
@@ -396,7 +396,9 @@ def _paint(spec: mujoco.MjSpec, images: dict[str, np.ndarray], texture_dir: Path
                 continue
             if geom.name.endswith("_visual"):
                 geom.material = f"crab_{role}"
-                geom.rgba[:] = rgba_of[role]
+                # White, times a near-white tint. A dark rgba here multiplies the
+                # cube and the marble disappears.
+                geom.rgba[:] = [*finish_tint(role), 1.0]
             elif geom.name.endswith("_meshcol"):
                 geom.material = ""
                 geom.rgba[:] = rgba_of[role]
@@ -404,11 +406,16 @@ def _paint(spec: mujoco.MjSpec, images: dict[str, np.ndarray], texture_dir: Path
                 raise RuntimeError(f"unexpected geom {geom.name!r} on {body.name}")
 
 
+def finish_tint(role: str) -> tuple[float, float, float]:
+    return MATERIALS[role].tint
+
+
 def _xml_text(spec: mujoco.MjSpec) -> str:
     xml = HEADER + spec.to_xml()
     xml = re.sub(
-        r'file="(?:[^"]*/)?(carapace|ventral|tip)\.png"',
-        r'file="textures/\1.png"',
+        r'(file(?:right|left|up|down|front|back)=")[^"]*'
+        r'/((?:carapace|ventral|tip)_(?:right|left|up|down|front|back)\.png)"',
+        r'\1textures/\2"',
         xml,
     )
     xml = re.sub(
@@ -474,38 +481,42 @@ def write_skin(
 # ── Preview ───────────────────────────────────────────────────────────────
 
 
-def _stage(path: Path) -> mujoco.MjModel:
-    """The robot on a limestone floor, lit for a still rather than for training."""
-    spec = mujoco.MjSpec.from_file(str(path))
-    key = spec.worldbody.add_light()
-    key.name = "key"
-    key.type = mujoco.mjtLightType.mjLIGHT_DIRECTIONAL
-    key.pos = [-2.0, -2.0, 3.0]
-    key.dir = [0.45, 0.35, -1.0]
-    key.diffuse = [0.82, 0.78, 0.70]
-    key.specular = [0.28, 0.24, 0.20]
-    key.castshadow = True
-    fill = spec.worldbody.add_light()
-    fill.name = "fill"
-    fill.type = mujoco.mjtLightType.mjLIGHT_DIRECTIONAL
-    fill.pos = [2.0, 1.0, 2.0]
-    fill.dir = [-0.55, -0.2, -1.0]
-    fill.diffuse = [0.34, 0.36, 0.38]
-    fill.castshadow = False
-    floor = spec.worldbody.add_geom()
-    floor.name = "preview_floor"
+#: The stills are the scenes a video would actually use, not a private light rig.
+#: `default` is mjlab's own floor and headlight; `beach` is the rocky-shore dusk.
+PREVIEW_SCENES = ("default", "beach")
+_SCENE_XML = REPO / "rl" / "mjlab" / "scene" / "scene.xml"
+
+
+def _stage(path: Path, scene_id: str) -> mujoco.MjModel:
+    """The robot on one registered scene's ground, under that scene's lights.
+
+    The ground geom is named `terrain`, which is the name `scenes/registry.py`
+    binds a scene material to. Anything else compiles and then shows the
+    untextured plane.
+    """
+    import scenes
+
+    spec = mujoco.MjSpec.from_file(str(_SCENE_XML))
+    ground = spec.worldbody.add_body()
+    ground.name = "terrain"
+    floor = ground.add_geom()
+    floor.name = "terrain"
     floor.type = mujoco.mjtGeom.mjGEOM_PLANE
-    floor.size = [2.0, 2.0, 0.1]
-    floor.pos = [0.0, 0.0, -0.001]
-    floor.rgba = [0.58, 0.54, 0.46, 1.0]
-    floor.group = 0
-    floor.contype = 0
-    floor.conaffinity = 0
-    model = spec.compile()
-    model.vis.headlight.ambient[:] = [0.26, 0.26, 0.28]
-    model.vis.headlight.diffuse[:] = [0.38, 0.36, 0.34]
-    model.vis.rgba.haze[:] = [0.64, 0.70, 0.74, 1.0]
-    return model
+    floor.size = [0.0, 0.0, 0.01]
+    robot = mujoco.MjSpec.from_file(str(path))
+    spec.attach(robot, prefix="", frame=spec.worldbody.add_frame())
+    scene = scenes.load(scene_id)
+    for texture in scene.textures:
+        texture.edit_spec(spec)
+    for material in scene.materials:
+        material.edit_spec(spec)
+    for light in scene.lights:
+        light.edit_spec(spec)
+    if scene.headlight is not None:
+        spec.visual.headlight.ambient = list(scene.headlight.ambient)
+        spec.visual.headlight.diffuse = list(scene.headlight.diffuse)
+        spec.visual.headlight.specular = list(scene.headlight.specular)
+    return spec.compile()
 
 
 def _home(model: mujoco.MjModel) -> mujoco.MjData:
@@ -517,6 +528,8 @@ def _home(model: mujoco.MjModel) -> mujoco.MjData:
     data.qpos[3:7] = (1.0, 0.0, 0.0, 0.0)
     for name, value in HOME.items():
         jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        if jid < 0:
+            jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"robot/{name}")
         if jid < 0:
             raise SystemExit(f"error: {name} is not in the model")
         data.qpos[int(model.jnt_qposadr[jid])] = value
@@ -540,10 +553,15 @@ class _Camera:
         self.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
         self.cam.lookat[:] = (0.0, 0.0, 0.07)
 
-    def shoot(self, azimuth: float, elevation: float, distance: float) -> np.ndarray:
+    def shoot(
+        self, azimuth: float, elevation: float, distance: float,
+        lookat: tuple[float, float, float] | None = None,
+    ) -> np.ndarray:
         self.cam.azimuth = azimuth
         self.cam.elevation = elevation
         self.cam.distance = distance
+        if lookat is not None:
+            self.cam.lookat[:] = lookat
         self.renderer.update_scene(self.data, camera=self.cam, scene_option=self.option)
         return self.renderer.render().copy()
 
@@ -589,50 +607,67 @@ def _mp4(frames: list[np.ndarray], path: Path, fps: int, size: tuple[int, int]) 
         writer.close()
 
 
+def _preview_name(kind: str, scene_id: str) -> str:
+    """`crab-front` on the default scene, `crab-beach-front` on the beach."""
+    if scene_id == "default":
+        return f"crab-{kind}"
+    return f"crab-{scene_id}-{kind}"
+
+
 def render_preview(out_dir: Path = PREVIEW_DIR) -> None:
-    """HOME-pose stills, default beside crab, and a short crab turntable."""
+    """HOME-pose stills, default beside crab, on the default scene and the beach."""
     show = (440, 330)
     draw = (show[0] * 2, show[1] * 2)
     views = (
-        ("crab-front", 180.0, -14.0, 0.58),
-        ("crab-side", 90.0, -8.0, 0.62),
-        ("crab-three-quarter", 142.0, -18.0, 0.60),
+        ("front", 180.0, -14.0, 0.58),
+        ("side", 90.0, -8.0, 0.62),
+        ("three-quarter", 142.0, -18.0, 0.60),
     )
+    # Tight on the shell. The lookat sits on the carapace, not the feet, so the
+    # marble fills the frame.
+    close = (150.0, -42.0, 0.16, (0.01, 0.0, 0.125))
     out_dir.mkdir(parents=True, exist_ok=True)
-    cameras = {
-        name: _Camera(_stage(path), None, draw)  # data filled below
-        for name, path in (("default", SRC), ("crab", DST))
-    }
-    try:
-        for cam in cameras.values():
-            cam.data = _home(cam.model)
-        for stem, azimuth, elevation, distance in views:
-            pair = _pair(
-                _shrink(cameras["default"].shoot(azimuth, elevation, distance), show),
-                _shrink(cameras["crab"].shoot(azimuth, elevation, distance), show),
-                "default",
-                "crab",
-            )
-            path = out_dir / f"{stem}.png"
-            pair.save(path, optimize=True)
-            print(f"[skin] {path.relative_to(REPO)}  {path.stat().st_size / 1e3:.0f} KB")
+    for scene_id in PREVIEW_SCENES:
+        cameras = {
+            name: _Camera(_stage(path, scene_id), None, draw)
+            for name, path in (("default", SRC), ("crab", DST))
+        }
+        try:
+            for cam in cameras.values():
+                cam.data = _home(cam.model)
+            for kind, azimuth, elevation, distance in views:
+                pair = _pair(
+                    _shrink(cameras["default"].shoot(azimuth, elevation, distance), show),
+                    _shrink(cameras["crab"].shoot(azimuth, elevation, distance), show),
+                    "default",
+                    "crab",
+                )
+                path = out_dir / f"{_preview_name(kind, scene_id)}.png"
+                pair.save(path, optimize=True)
+                print(f"[skin] {path.relative_to(REPO)}  {path.stat().st_size / 1e3:.0f} KB")
 
-        fps = 24
-        seconds = 4
-        turn_show = (480, 360)
-        # The still camera is 880x660; the turntable is drawn at the same size
-        # and scaled, so one context covers both.
-        frames = []
-        n = fps * seconds
-        crab = cameras["crab"]
-        for i in range(n):
-            frames.append(_shrink(crab.shoot(180.0 + 360.0 * i / n, -16.0, 0.64), turn_show))
-        video = out_dir / "crab-turntable.mp4"
-        _mp4(frames, video, fps, turn_show)
-        print(f"[skin] {video.relative_to(REPO)}  {video.stat().st_size / 1e6:.2f} MB")
-    finally:
-        for cam in cameras.values():
-            cam.close()
+            close_show = (640, 480)
+            shell = _shrink(cameras["crab"].shoot(*close), close_show)
+            close_path = out_dir / f"{_preview_name('close', scene_id)}.png"
+            Image.fromarray(shell).save(close_path, optimize=True)
+            print(f"[skin] {close_path.relative_to(REPO)}  {close_path.stat().st_size / 1e3:.0f} KB")
+
+            fps = 24
+            seconds = 4
+            turn_show = (480, 360)
+            frames = []
+            n = fps * seconds
+            crab = cameras["crab"]
+            for i in range(n):
+                frames.append(
+                    _shrink(crab.shoot(180.0 + 360.0 * i / n, -16.0, 0.64), turn_show)
+                )
+            video = out_dir / f"{_preview_name('turntable', scene_id)}.mp4"
+            _mp4(frames, video, fps, turn_show)
+            print(f"[skin] {video.relative_to(REPO)}  {video.stat().st_size / 1e6:.2f} MB")
+        finally:
+            for cam in cameras.values():
+                cam.close()
 
 
 def _gl_failure(exc: BaseException) -> bool:
@@ -643,7 +678,7 @@ def _gl_failure(exc: BaseException) -> bool:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--preview", action="store_true",
-                    help="write HOME-pose stills and a turntable under docs/media/")
+                    help="HOME stills and a turntable, on the default scene and the beach")
     ap.add_argument("--preview-dir", type=Path, default=PREVIEW_DIR)
     args = ap.parse_args(argv)
 

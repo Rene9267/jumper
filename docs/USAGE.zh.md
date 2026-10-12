@@ -1,4 +1,4 @@
-<!-- tracks: USAGE.md @ sha256:83b049384021ccbc -->
+<!-- tracks: USAGE.md @ sha256:fa20a4622388f1a6 -->
 
 # 手册
 
@@ -746,22 +746,24 @@ python tools/hull_collision.py --model assets/<name>/<model>.xml --exclude <mesh
 
 ### 螃蟹外观
 
-`assets/jumper/jumper_crab.xml` 是同一台机器人的另一套外观。`assets/jumper/tools/build_skin.py` 用 MjSpec 读入 `jumper.xml`，写出这份文件，并把三张按种子生成的纹理存到 `assets/jumper/textures/`（`carapace.png`、`ventral.png`、`tip.png`）。纹理只用 NumPy 和 Pillow 画。种子是脚本里的 `SEED`，所以再跑一次会得到仓库里已经提交的那套图。
+`assets/jumper/jumper_crab.xml` 是同一台机器人的另一套外观。`assets/jumper/tools/build_skin.py` 用 MjSpec 读入 `jumper.xml`，写出这份文件，并把按种子生成的立方体贴图存到 `assets/jumper/textures/`（`carapace_*.png`、`ventral_*.png`、`tip_*.png`，各六面）。纹理只用 NumPy 和 Pillow 画。种子是脚本里的 `SEED`，所以再跑一次会得到仓库里已经提交的那套图。
 
-颜色取自地中海滨蟹 *Pachygrapsus marmoratus* 和 *Carcinus aestuarii*：
+视觉 STL 没有纹理坐标，所以二维纹理在这些网格上只有一个纹素，大理石纹不会出现。这套外观用带 `texuniform` 的立方体纹理，MuJoCo 按网格自身的坐标来贴。geom 的颜色会乘上这张纹理：深色 rgba 会把背甲压成黑色，所以视觉 geom 保持接近白色的淡色，颜色由图片本身来带。
+
+颜色取自地中海滨蟹 *Pachygrapsus marmoratus* 和 *Carcinus aestuarii*。背甲较暗的一半大约在 sRGB 90–120，这样在默认头灯下读成橄榄色，而不是黑色：
 
 | 分组 | 连杆 | 外观 |
 |---|---|---|
 | shell | `upper_shell_link` | 深橄榄 / 褐紫大理石纹 |
-| underside | `base_link` | 奶油赭石色 |
+| underside | `base_link` | 浅奶油色，污渍里带一点赭石 |
 | leg | 四条步足的大腿、小腿、足尖 | 同一套大理石纹，略偏橄榄 |
-| leg joint | 四个髋 | 奶油赭石色 |
+| leg joint | 四个髋 | 浅奶油色 |
 | claw | 肩、大臂、掌 | 大理石纹，略偏褐紫 |
-| claw joint | 前臂、掌垫、夹持嵌件 | 奶油赭石色，螯的内侧浅色 |
+| claw joint | 前臂、掌垫、夹持嵌件 | 浅奶油色，螯的内侧面 |
 | tip | `finger` 和 `finger_tip` | 深褐近黑 |
 | sensor | 显示屏、相机、ToF | 保持黑色 |
 
-视觉 geom 带材质。材质会盖过 rgba，所以 `scenes/plain.py` 在域随机化要写 `geom_rgba` 时不给地面加材质。这套外观的材质在机器人的视觉网格上，之后再写这些网格的 rgba 不会显出来。每个 `*_meshcol` geom 用纹理的平均色作为纯色 rgba，并且不带材质。`--strip-visual` 删掉视觉网格之后，留下来的碰撞 geom 仍然是滨蟹的颜色。
+`reflectance` 是 0。对深色天空的镜像会把背甲拉向黑色，甲壳也不是那样反光的。高光只留一层很弱的光泽。每个 `*_meshcol` geom 用纹理的平均色作为纯色 rgba，并且不带材质。`--strip-visual` 删掉视觉网格之后，留下来的碰撞 geom 仍然是滨蟹的颜色。
 
 碰撞几何、`contype`、`conaffinity`、摩擦、质量、惯量、关节和执行器都是默认模型的。`tests/test_crab_skin.py` 编译两份文件并精确比较这些数组。脚本在替换 XML 之前做同样的检查，并且不写 `jumper.xml`。
 
@@ -782,6 +784,7 @@ python tools/readme_media.py --model crab --only walk
 python assets/jumper/tools/build_skin.py
 
 # HOME 姿态的静帧（默认外观和滨蟹并排）和一段短转台，写到 docs/media/。
+# 一份在 scenes/default.py 上，一份在 scenes/beach.py 上（crab-beach-*.png）。
 # 先用 egl；建不起这个上下文时脚本改用 osmesa 再试一次。
 MUJOCO_GL=egl python assets/jumper/tools/build_skin.py --preview
 ```

@@ -45,9 +45,11 @@ This repo is Jumper’s AI toolkit for appearance, motion, and scene creation. O
 
 ## Shore-crab colours
 
-`--model crab` is the same Jumper mechanism in the colours of a Mediterranean shore crab (*Pachygrapsus marmoratus*, *Carcinus aestuarii*): a dark olive and brown-purple marbled carapace, a cream-ochre underside and leg joints, and dark brown-black claw tips. The display, the camera and the ToF stay black. `assets/jumper/jumper.xml` is unchanged, and the two models compile to the same mass, inertia, collision and joints.
+`--model crab` is the same Jumper mechanism in the colours of a Mediterranean shore crab (*Pachygrapsus marmoratus*, *Carcinus aestuarii*): a dark olive and brown-purple marbled carapace, a pale cream underside and leg joints, and dark brown-black claw tips. The display, the camera and the ToF stay black. `assets/jumper/jumper.xml` is unchanged, and the two models compile to the same mass, inertia, collision and joints.
 
-**Front.** Default on the left, crab on the right, both at the HOME pose.
+The stills are the HOME pose on `scenes/default.py`. Default on the left, crab on the right.
+
+**Front.**
 
 ![Front, default and crab](docs/media/crab-front.png)
 
@@ -59,11 +61,19 @@ This repo is Jumper’s AI toolkit for appearance, motion, and scene creation. O
 
 ![Three-quarter, default and crab](docs/media/crab-three-quarter.png)
 
+**Shell.** The marble is a cube map: the visual meshes have no texture coordinates, so a flat image would not show.
+
+![Shell close-up](docs/media/crab-close.png)
+
+The same pose on `scenes/beach.py`, the shore the skin is for:
+
+![Beach, default and crab](docs/media/crab-beach-three-quarter.png)
+
 ```bash
 python scripts/play.py --task jumper.dance --model crab
 MJRL_MODEL=crab python scripts/play.py --task jumper.flat
 python assets/jumper/tools/build_skin.py             # regenerate the skin
-python assets/jumper/tools/build_skin.py --preview   # these stills, and a turntable
+python assets/jumper/tools/build_skin.py --preview   # these stills, the beach, and turntables
 python tools/readme_media.py --model crab --only walk
 ```
 

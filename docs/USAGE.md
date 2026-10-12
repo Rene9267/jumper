@@ -860,22 +860,24 @@ edits the XML.
 
 ### The crab skin
 
-`assets/jumper/jumper_crab.xml` is a second look for the same robot. `assets/jumper/tools/build_skin.py` loads `jumper.xml` through MjSpec, writes that file, and saves three seeded textures under `assets/jumper/textures/` (`carapace.png`, `ventral.png`, `tip.png`). NumPy and Pillow draw them. The seed is `SEED` in the script, so a re-run reproduces the committed pictures.
+`assets/jumper/jumper_crab.xml` is a second look for the same robot. `assets/jumper/tools/build_skin.py` loads `jumper.xml` through MjSpec, writes that file, and saves seeded cube faces under `assets/jumper/textures/` (`carapace_*.png`, `ventral_*.png`, `tip_*.png`, six faces each). NumPy and Pillow draw them. The seed is `SEED` in the script, so a re-run reproduces the committed pictures.
 
-The colours are a Mediterranean shore crab, *Pachygrapsus marmoratus* and *Carcinus aestuarii*:
+The visual STLs have no texture coordinates, so a 2D texture on them is a single texel and the marble never appears. The skin uses a cube texture with `texuniform`, which MuJoCo maps from the mesh coordinates. The geom colour multiplies that texture: a dark rgba turns the shell black, which is why the visual geoms stay a near-white tint and the picture carries the colour.
+
+The colours are a Mediterranean shore crab, *Pachygrapsus marmoratus* and *Carcinus aestuarii*. The darker half of the carapace sits near sRGB 90–120, so it reads as olive under the default headlight rather than as black:
 
 | Group | Links | Look |
 |---|---|---|
 | shell | `upper_shell_link` | dark olive / brown-purple marble |
-| underside | `base_link` | cream-ochre |
+| underside | `base_link` | pale cream, with a little ochre in the stains |
 | leg | walking-leg thighs, calves, foot tips | the same marble, a little more olive |
-| leg joint | the four hips | cream-ochre |
+| leg joint | the four hips | pale cream |
 | claw | shoulder, upper arm, palm | the marble, a little more purple-brown |
-| claw joint | forearm, pads, grip inserts | cream-ochre, the pale inner claw |
+| claw joint | forearm, pads, grip inserts | pale cream, the inner face of the claw |
 | tip | `finger` and `finger_tip` | dark brown-black |
 | sensor | display, camera, ToF | left black |
 
-Visual geoms take a material. A material wins over rgba, which is why `scenes/plain.py` keeps materials off the ground when domain randomisation writes `geom_rgba`. The skin's materials sit on the robot's visual meshes, so a later rgba write on those meshes would not show. Each `*_meshcol` geom keeps a flat rgba of its texture's average colour and no material. `--strip-visual` deletes the visual meshes, and the collision geom that remains is still crab-coloured.
+`reflectance` is 0. A mirror of a dark sky pulls the shell toward black, and it is not how chitin looks. Specular is only a soft highlight. Each `*_meshcol` geom keeps a flat rgba of its texture's average colour and no material. `--strip-visual` deletes the visual meshes, and the collision geom that remains is still crab-coloured.
 
 Collision geometry, `contype`, `conaffinity`, friction, mass, inertia, joints and actuators are the default model's. `tests/test_crab_skin.py` compiles both files and compares those arrays exactly. The script does the same check before it replaces the XML, and it does not write `jumper.xml`.
 
@@ -896,6 +898,7 @@ python tools/readme_media.py --model crab --only walk
 python assets/jumper/tools/build_skin.py
 
 # HOME-pose stills (default beside crab) and a short turntable, under docs/media/.
+# Once on scenes/default.py, once on scenes/beach.py (crab-beach-*.png).
 # egl first; the script retries with osmesa if that context cannot be created.
 MUJOCO_GL=egl python assets/jumper/tools/build_skin.py --preview
 ```

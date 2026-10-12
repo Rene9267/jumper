@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:00f05b661dfa8189 -->
+<!-- tracks: README.md @ sha256:7f707664fbbbe330 -->
 
 ![跳跳](docs/media/jumper-hero-zh.png)
 
@@ -47,9 +47,11 @@
 
 ## 滨蟹配色
 
-`--model crab` 是同一套跳跳机构，涂成地中海滨蟹（*Pachygrapsus marmoratus*、*Carcinus aestuarii*）的颜色：深橄榄色与褐紫色相间的大理石纹背甲，奶油赭石色的腹面和腿节，深褐近黑的螯尖。显示屏、相机和 ToF 保持黑色。`assets/jumper/jumper.xml` 不动，两份模型编译出的质量、惯量、碰撞和关节相同。
+`--model crab` 是同一套跳跳机构，涂成地中海滨蟹（*Pachygrapsus marmoratus*、*Carcinus aestuarii*）的颜色：深橄榄色与褐紫色相间的大理石纹背甲，浅奶油色的腹面和腿节，深褐近黑的螯尖。显示屏、相机和 ToF 保持黑色。`assets/jumper/jumper.xml` 不动，两份模型编译出的质量、惯量、碰撞和关节相同。
 
-**正面。** 左侧是默认外观，右侧是滨蟹外观，都在 HOME 姿态。
+静帧是 `scenes/default.py` 上的 HOME 姿态。左侧是默认外观，右侧是滨蟹外观。
+
+**正面。**
 
 ![正面，默认与滨蟹](docs/media/crab-front.png)
 
@@ -61,11 +63,19 @@
 
 ![斜前方，默认与滨蟹](docs/media/crab-three-quarter.png)
 
+**背甲。** 大理石纹是立方体贴图：视觉网格没有纹理坐标，一张平面图贴不上去。
+
+![背甲特写](docs/media/crab-close.png)
+
+同一姿态放在 `scenes/beach.py` 上，也就是这套外观要去的岸边：
+
+![沙滩，默认与滨蟹](docs/media/crab-beach-three-quarter.png)
+
 ```bash
 python scripts/play.py --task jumper.dance --model crab
 MJRL_MODEL=crab python scripts/play.py --task jumper.flat
 python assets/jumper/tools/build_skin.py             # 重新生成这套外观
-python assets/jumper/tools/build_skin.py --preview   # 上面的静帧，以及一段转台
+python assets/jumper/tools/build_skin.py --preview   # 上面的静帧、沙滩，以及转台
 python tools/readme_media.py --model crab --only walk
 ```
 
