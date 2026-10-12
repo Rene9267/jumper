@@ -43,6 +43,32 @@ This repo is Jumper’s AI toolkit for appearance, motion, and scene creation. O
 
 [Browse all maps](https://github.com/KingKongRobotics/jumper-design/tree/main/library/maps)
 
+## Shore-crab colours
+
+`--model crab` is the same Jumper mechanism in the colours of a Mediterranean shore crab (*Pachygrapsus marmoratus*, *Carcinus aestuarii*): a dark olive and brown-purple marbled carapace, a cream-ochre underside and leg joints, and dark brown-black claw tips. The display, the camera and the ToF stay black. `assets/jumper/jumper.xml` is unchanged, and the two models compile to the same mass, inertia, collision and joints.
+
+**Front.** Default on the left, crab on the right, both at the HOME pose.
+
+![Front, default and crab](docs/media/crab-front.png)
+
+**Side.**
+
+![Side, default and crab](docs/media/crab-side.png)
+
+**Three-quarter.**
+
+![Three-quarter, default and crab](docs/media/crab-three-quarter.png)
+
+```bash
+python scripts/play.py --task jumper.dance --model crab
+MJRL_MODEL=crab python scripts/play.py --task jumper.flat
+python assets/jumper/tools/build_skin.py             # regenerate the skin
+python assets/jumper/tools/build_skin.py --preview   # these stills, and a turntable
+python tools/readme_media.py --model crab --only walk
+```
+
+`python scripts/train.py --list` shows `crab` on every jumper task, the dance tasks included. Training still defaults to `jumper`. The longer note is in [docs/USAGE.md](docs/USAGE.md#the-crab-skin).
+
 ## Where to find things
 
 | Resource | Purpose |

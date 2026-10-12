@@ -1,4 +1,4 @@
-<!-- tracks: PROJECT_GUIDE.md @ sha256:f31ae2b351ea20cc -->
+<!-- tracks: PROJECT_GUIDE.md @ sha256:49e41fa7de3a8e38 -->
 
 # Jumper 项目指南
 
@@ -79,7 +79,8 @@ PyTorch 或 vendored package 是否装错的方法。[教程](TUTORIAL.zh.md)会
 `play --app` 编译。一个 bundle 携带这些 runtime、每种模式的策略、控制映射和参考帧，让所有
 宿主检查同一组输入与输出。
 
-Jumper 本身位于 `assets/jumper/jumper.xml`，包含舵机曲线、dToF 传感器和机载相机。场景可以把
+Jumper 本身位于 `assets/jumper/jumper.xml`，包含舵机曲线、dToF 传感器和机载相机。
+`assets/jumper/jumper_crab.xml` 是同一套机构的滨蟹配色，用 `--model crab` 选用。场景可以把
 它放到摄影棚地面、崎岖地面、冰面、台阶或绳索秋千上。
 
 ## 项目状态

@@ -21,6 +21,7 @@ example below is `jumper.flat`'s files under another name, numbers included.
 - [A task that needs material: `jumper.dance`](#a-task-that-needs-material-jumperdance)
 - [A task with a second command: `jumper.posture`](#a-task-with-a-second-command-jumperposture)
 - [Adding a model (asset)](#adding-a-model-asset)
+- [The crab skin](#the-crab-skin)
 - [Setting defaults](#setting-defaults)
 - [Scenes](#scenes)
 - [TensorBoard](#tensorboard)
@@ -857,6 +858,50 @@ python tools/hull_collision.py --model assets/<name>/<model>.xml --exclude <mesh
 It reports by default (including the maximum inward shrink); `--apply` writes the STLs and
 edits the XML.
 
+### The crab skin
+
+`assets/jumper/jumper_crab.xml` is a second look for the same robot. `assets/jumper/tools/build_skin.py` loads `jumper.xml` through MjSpec, writes that file, and saves three seeded textures under `assets/jumper/textures/` (`carapace.png`, `ventral.png`, `tip.png`). NumPy and Pillow draw them. The seed is `SEED` in the script, so a re-run reproduces the committed pictures.
+
+The colours are a Mediterranean shore crab, *Pachygrapsus marmoratus* and *Carcinus aestuarii*:
+
+| Group | Links | Look |
+|---|---|---|
+| shell | `upper_shell_link` | dark olive / brown-purple marble |
+| underside | `base_link` | cream-ochre |
+| leg | walking-leg thighs, calves, foot tips | the same marble, a little more olive |
+| leg joint | the four hips | cream-ochre |
+| claw | shoulder, upper arm, palm | the marble, a little more purple-brown |
+| claw joint | forearm, pads, grip inserts | cream-ochre, the pale inner claw |
+| tip | `finger` and `finger_tip` | dark brown-black |
+| sensor | display, camera, ToF | left black |
+
+Visual geoms take a material. A material wins over rgba, which is why `scenes/plain.py` keeps materials off the ground when domain randomisation writes `geom_rgba`. The skin's materials sit on the robot's visual meshes, so a later rgba write on those meshes would not show. Each `*_meshcol` geom keeps a flat rgba of its texture's average colour and no material. `--strip-visual` deletes the visual meshes, and the collision geom that remains is still crab-coloured.
+
+Collision geometry, `contype`, `conaffinity`, friction, mass, inertia, joints and actuators are the default model's. `tests/test_crab_skin.py` compiles both files and compares those arrays exactly. The script does the same check before it replaces the XML, and it does not write `jumper.xml`.
+
+Every jumper task registers the skin, the dance tasks included (`jumper.dance`, `jumper.dance_brazilian`, `jumper.dance_dream_wings`, `jumper.dance_maze`, `jumper.dance_waist`). The first asset is still `jumper`, so training, replay and export behave as before until something asks for `crab`. `--list` prints both.
+
+```bash
+python scripts/train.py --list
+
+# Replay. The task, the rewards and the checkpoint are the ones you already have.
+python scripts/play.py --task jumper.dance --model crab
+python scripts/play.py --task jumper.flat --model crab --scene beach
+MJRL_MODEL=crab python scripts/play.py --task jumper.posture
+
+# Policy clips. The file is walk-crab.gif, so the README clip is left in place.
+python tools/readme_media.py --model crab --only walk
+
+# Regenerate the XML and the textures. Refuses an XML whose dynamics differ.
+python assets/jumper/tools/build_skin.py
+
+# HOME-pose stills (default beside crab) and a short turntable, under docs/media/.
+# egl first; the script retries with osmesa if that context cannot be created.
+MUJOCO_GL=egl python assets/jumper/tools/build_skin.py --preview
+```
+
+Logs for a run on this asset land in `logs/jumper_crab/`, because the log directory is the model file's stem.
+
 ---
 
 ## Setting defaults
@@ -888,7 +933,7 @@ one), the entry point **errors and says what is missing**.
 MJRL_TASK=jumper.flat        # see --list. Empty and not given on the command line -> error
 
 # which asset: a registered name, or a path to an .xml file
-MJRL_MODEL=                # empty -> the task's default asset
+MJRL_MODEL=                # empty -> the task's default asset. crab = the shore-crab skin
 
 # how the world looks: ground, sky and lights. See --list. Empty -> the task's own
 MJRL_SCENE=
@@ -1422,6 +1467,9 @@ python scripts/train.py
 
 # Resolve without building an environment, to check the arguments
 python scripts/train.py --task jumper.tripod --model jumper --dry-run
+
+# Replay a trained policy on the shore-crab skin
+python scripts/play.py --task jumper.dance --model crab
 
 # Watch while training (the default; no switch needed)
 python scripts/train.py --task jumper.flat --num_envs 64
