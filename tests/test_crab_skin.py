@@ -69,12 +69,31 @@ def test_crab_skin_matches_jumper_physics() -> None:
         assert _names(base, obj, count) == _names(crab, obj, count)
     assert base.nq == crab.nq and base.nv == crab.nv
 
-    fields = _builder().PHYSICS_FIELDS
+    mod = _builder()
+    fields = mod.PHYSICS_FIELDS
+    assert "geom_size" not in fields
     for name in fields:
         got = np.asarray(getattr(base, name))
         other = np.asarray(getattr(crab, name))
         assert got.shape == other.shape, name
         np.testing.assert_array_equal(got, other, err_msg=name)
+
+    # Visual meshes are rewritten as OBJ so they can carry texcoords, and
+    # geom_size is the float32 bound of those vertices. Collision geoms stay
+    # the STLs and compare exact. The control rejects a millimetre, so the
+    # tolerance is not a way for a skin to resize the robot.
+    assert mod.geom_size_error(base, crab) is None
+    names = _names(base, mujoco.mjtObj.mjOBJ_GEOM, base.ngeom)
+    col = next(i for i, name in enumerate(names) if name.endswith("_meshcol"))
+    saved = np.array(crab.geom_size[col], copy=True)
+    crab.geom_size[col, 0] = saved[0] + 1e-4
+    assert mod.geom_size_error(base, crab) is not None
+    crab.geom_size[col] = saved
+    vis = next(i for i, name in enumerate(names) if name == "upper_shell_link_visual")
+    saved = np.array(crab.geom_size[vis], copy=True)
+    crab.geom_size[vis, 2] = saved[2] + 1e-3
+    assert mod.geom_size_error(base, crab) is not None
+    crab.geom_size[vis] = saved
 
     # Control: the same comparison rejects a one-body mass change, so an empty
     # field list or a model compared with itself is not what passed above.
@@ -121,51 +140,61 @@ def test_sensors_stay_black_and_groups_take_their_materials() -> None:
     assert tip < shell < ventral
 
 
-def test_the_shell_is_a_cube_map_and_the_colours_are_not_black() -> None:
-    """No texcoords, so a 2D texture is one texel, and a dark rgba makes it black.
+def test_the_shell_is_box_mapped_and_the_colours_are_not_black() -> None:
+    """A cube map pinches the dome, and a dark rgba makes a texture read as black.
 
-    The committed carapace's darker half has to land near sRGB 90–120, and the
-    belly has to stay a pale cream rather than a saturated orange. A cube
-    material with `texuniform` is what actually paints the mesh.
+    The visual STLs have no texcoords. The skin bakes box coordinates into OBJ
+    copies and samples a tileable picture with `texuniform` off. The carapace's
+    darker half has to land near sRGB 90–120, and the belly, thighs and forearms
+    stay a pale cream rather than white or a saturated orange.
     """
     base = mujoco.MjModel.from_xml_path(str(JUMPER_XML))
     assert int(np.max(base.mesh_texcoordnum)) == 0, "the premise: the STLs grew UVs"
 
     crab = mujoco.MjModel.from_xml_path(str(CRAB_XML))
-    cube = int(mujoco.mjtTexture.mjTEXTURE_CUBE)
+    flat = int(mujoco.mjtTexture.mjTEXTURE_2D)
     assert crab.ntex == 3
-    assert {int(t) for t in crab.tex_type} == {cube}
-    assert bool(np.all(crab.mat_texuniform))
+    assert {int(t) for t in crab.tex_type} == {flat}
+    assert not bool(np.any(crab.mat_texuniform))
     assert float(np.max(crab.mat_reflectance)) == 0.0
 
     mod = _builder()
+    shell = mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MESH, "upper_shell_link")
+    assert int(crab.mesh_texcoordnum[shell]) > 1000
+    sensor = mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MESH, "display_module_link")
+    assert int(crab.mesh_texcoordnum[sensor]) == 0
+    # A collider that shares its STL with the visual keeps that STL. The texcoords
+    # live on a second mesh, so rewriting the picture cannot move the hull.
+    pad = mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MESH, "LF_palm_pad_b_link")
+    assert int(crab.mesh_texcoordnum[pad]) == 0
+    assert int(crab.mesh_texcoordnum[
+        mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MESH, "LF_palm_pad_b_link_skin")
+    ]) > 0
+
+    assert mod.appearance("LM_thigh_link") == "leg_joint"
+    assert mod.appearance("LF_forearm_link") == "claw_joint"
+    assert mod.appearance("LM_calf_link") == "leg"
+
     for i in range(crab.ngeom):
         name = mujoco.mj_id2name(crab, mujoco.mjtObj.mjOBJ_GEOM, i)
         body = mujoco.mj_id2name(crab, mujoco.mjtObj.mjOBJ_BODY, int(crab.geom_bodyid[i]))
         if not name.endswith("_visual") or mod.appearance(body) == "sensor":
             continue
-        # Near white. A dark rgba multiplies the cube and the marble goes black.
+        # Near white. A dark rgba multiplies the picture and the marble goes black.
         assert float(crab.geom_rgba[i, :3].min()) > 0.85, name
 
-    carapace = np.concatenate(
-        [np.asarray(Image.open(TEXTURES / f"carapace_{face}.png")).reshape(-1, 3)
-         for face in mod.FACE_ORDER],
-        axis=0,
-    )
+    carapace = np.asarray(Image.open(TEXTURES / "carapace.png")).reshape(-1, 3)
     lum = carapace.mean(axis=1)
     dark = carapace[lum <= np.median(lum)].mean()
     assert 90.0 <= dark <= 120.0, dark
     assert float(lum.std()) > 12.0, "a flat brown would pass the mean and show no marble"
 
-    ventral = np.concatenate(
-        [np.asarray(Image.open(TEXTURES / f"ventral_{face}.png")).reshape(-1, 3)
-         for face in mod.FACE_ORDER],
-        axis=0,
-    ).astype(np.float64)
+    ventral = np.asarray(Image.open(TEXTURES / "ventral.png")).reshape(-1, 3).astype(np.float64)
     hi = ventral.max(axis=1)
     sat = (hi - ventral.min(axis=1)) / np.maximum(hi, 1.0)
     assert float(sat.mean()) < 0.25, sat.mean()
-    assert float(ventral.mean()) > 190.0
+    # Pale cream-ochre. Above ~190 the beach sun clips it to white plastic.
+    assert 150.0 <= float(ventral.mean()) <= 185.0
 
 
 def test_every_link_has_a_role() -> None:
@@ -205,13 +234,17 @@ def compare_committed_skin() -> None:
     """
     mod = _builder()
     for name, draw in mod.TEXTURES.items():
-        for face, got in draw().items():
-            have = np.asarray(Image.open(TEXTURES / f"{name}_{face}.png"))
-            if got.shape != have.shape or not np.array_equal(got, have):
-                raise SystemExit(f"texture {name}_{face} does not match the generator")
+        got = draw()
+        have = np.asarray(Image.open(TEXTURES / f"{name}.png"))
+        if got.shape != have.shape or not np.array_equal(got, have):
+            raise SystemExit(f"texture {name} does not match the generator")
+    for name, got in mod.baked_meshes().items():
+        path = mod.SKIN_DIR / name
+        if got != path.read_bytes():
+            raise SystemExit(f"mesh {name} does not match the generator")
     spec = mujoco.MjSpec.from_file(str(JUMPER_XML))
     images = {name: draw() for name, draw in mod.TEXTURES.items()}
-    mod._paint(spec, images, TEXTURES)
+    mod._paint(spec, images)
     fresh = mod._xml_text(spec)
     disk = CRAB_XML.read_text(encoding="utf-8")
     if fresh != disk:

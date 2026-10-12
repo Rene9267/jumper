@@ -61,9 +61,13 @@ The stills are the HOME pose on `scenes/default.py`. Default on the left, crab o
 
 ![Three-quarter, default and crab](docs/media/crab-three-quarter.png)
 
-**Shell.** The marble is a cube map: the visual meshes have no texture coordinates, so a flat image would not show.
+**Shell, from above.** The marble is a fine network of dark veins on a box map, so the dome has no pinch point.
 
-![Shell close-up](docs/media/crab-close.png)
+![Shell from above](docs/media/crab-close-above.png)
+
+**Shell, from the side.**
+
+![Shell from the side](docs/media/crab-close-side.png)
 
 The same pose on `scenes/beach.py`, the shore the skin is for:
 

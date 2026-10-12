@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:7f707664fbbbe330 -->
+<!-- tracks: README.md @ sha256:00d6c67e59781bd5 -->
 
 ![跳跳](docs/media/jumper-hero-zh.png)
 
@@ -63,9 +63,13 @@
 
 ![斜前方，默认与滨蟹](docs/media/crab-three-quarter.png)
 
-**背甲。** 大理石纹是立方体贴图：视觉网格没有纹理坐标，一张平面图贴不上去。
+**背甲，俯视。** 大理石纹是细的深色脉络，用盒式贴图，穹顶上没有汇聚点。
 
-![背甲特写](docs/media/crab-close.png)
+![背甲俯视](docs/media/crab-close-above.png)
+
+**背甲，侧视。**
+
+![背甲侧视](docs/media/crab-close-side.png)
 
 同一姿态放在 `scenes/beach.py` 上，也就是这套外观要去的岸边：
 
