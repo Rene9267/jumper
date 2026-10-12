@@ -864,7 +864,7 @@ edits the XML.
 
 The colours are *Calappa granulata*, the Mediterranean box crab: a light cream-ivory carapace with a warm peach tint, and crisp crimson-to-burgundy discs (`#9E2235` to `#6E1E3A`). The discs are larger and more numerous toward the front rim and the outline, and sparse on the crown. They are hard-edged circles, not veins. Legs are the same ivory with a few small reddish dots. Claw tips are a darker red-brown. The geom colour multiplies the texture, so visual geoms stay a near-white tint and the picture carries the colour.
 
-`texuniform` maps a 2D picture from the mesh's stored X and Y. On this shell those axes are the thin direction and one long direction, so a tiled picture turns into lengthwise streaks. The shell mesh is therefore written with texcoords in the STL frame's dorsal plane (forward and lateral), and `texrepeat` stays 1. No extra mesh file is committed. Legs use `texrepeat` 2, which keeps a dot about a centimetre across.
+`texuniform` maps a 2D picture from the mesh's stored X and Y. On this shell those axes are the thin direction and one long direction, so a tiled picture turns into lengthwise streaks. Mapping the whole shell from the dorsal plane keeps a disc round on the crown and stretches it into a vertical slit on the steep flanks. The shell mesh is therefore written with box texcoords: each face is projected onto the plane it faces (dorsal, side, or front), and a vertex where those planes meet keeps one coordinate for each plane. The carapace picture is an atlas of those three projections, and `texrepeat` stays 1. No extra mesh file is committed. Legs use `texrepeat` 2, which keeps a dot about a centimetre across.
 
 | Group | Links | Look |
 |---|---|---|

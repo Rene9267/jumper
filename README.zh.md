@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:fa62b66f086da88e -->
+<!-- tracks: README.md @ sha256:e1a012d65126c8cf -->
 
 ![跳跳](docs/media/jumper-hero-zh.png)
 
@@ -63,11 +63,11 @@
 
 ![斜前方，默认与滨蟹](docs/media/crab-three-quarter.png)
 
-**背甲，俯视。** 圆斑是背甲自身背面平面上的硬边圆盘，顶部稀疏。
+**背甲，俯视。** 硬边圆盘，顶部稀疏。
 
 ![背甲俯视](docs/media/crab-close-above.png)
 
-**背甲，侧视。**
+**背甲，侧视。** 侧壁用它自己的投影，同样的圆盘在侧面也是圆的。
 
 ![背甲侧视](docs/media/crab-close-side.png)
 

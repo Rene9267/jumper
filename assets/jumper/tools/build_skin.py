@@ -19,14 +19,17 @@ of this file are the swatches.
 
 The visual STLs have no texture coordinates. `texuniform` paints a 2D picture
 from the mesh's stored X and Y, and on this shell those axes are the thin
-direction and one long direction, so a tile becomes lengthwise streaks. The
-shell therefore carries its own texcoords, built from the STL frame's dorsal
-plane (world X and Y) and written beside the original vertices. Spots are
-hard-edged circles in that plane: larger toward the front rim and the outline,
-sparse on the crown. Legs use a small `texrepeat`, so their few dots stay
-dots. The pictures are NumPy and Pillow only, seed `SEED`. No second mesh file
-is committed. The shell's collision geom is untouched, so the silhouette
-matches the default model.
+direction and one long direction, so a tile becomes lengthwise streaks. A
+dorsal-only projection keeps a disc round on the crown and stretches it into
+a vertical slit on the steep flanks, which is about half the shell. The shell
+therefore carries box texcoords: each face is projected on the plane it faces,
+and a vertex on the ridge between two planes keeps a coordinate for each. The
+carapace picture is an atlas of those projections, so the discs stay discs
+from above and from the side. Spots are larger toward the front rim and the
+outline, sparse on the crown. Legs use a small `texrepeat`. The pictures are
+NumPy and Pillow only, seed `SEED`. No second mesh file is committed. The
+shell's collision geom is untouched, so the silhouette matches the default
+model.
 
 The geom colour multiplies the texture. Leaving the factory red, or writing the
 texture's own dark average into `rgba`, crushes the shell toward black and
@@ -142,6 +145,19 @@ TIP_RED_BROWN = (122, 54, 40)
 LEG_REPEAT = (2.0, 2.0)
 SHELL_REPEAT = (1.0, 1.0)
 
+#: Box atlas. Columns are the face's dominant axis: 0 = X (front and back),
+#: 1 = Y (the flanks), 2 = Z (the dorsal plate). One row, because the two
+#: sides of an axis share a projection — a disc at one (x, z) is the same disc
+#: on the left flank and the right. Each cell covers `shell_frame`'s uv scale
+#: on both axes, so a circle in the cell is a circle on the face.
+SHELL_ATLAS_COLS = 3
+SHELL_ATLAS_ROWS = 1
+SHELL_ATLAS_CELL = 1024
+#: Padding inside a cell, past the shell's bounding box. The biggest disc is
+#: 19 mm times the 1.15 size jitter, about 22 mm. This stays larger than that,
+#: so a disc cannot cross into the next projection.
+SHELL_SPOT_MARGIN_M = 0.028
+
 #: Names of the cube faces an older skin wrote. A re-run deletes them.
 _CUBE_FACES = ("right", "left", "up", "down", "front", "back")
 
@@ -156,7 +172,7 @@ MATERIALS: dict[str, Finish] = {
     "tip": Finish("tip", (1.0, 1.0, 1.0), 0.08, 0.12, 0.75, (1.0, 1.0), True),
 }
 
-#: Inlining the shell vertices so the dorsal texcoords have a mesh to live on
+#: Inlining the shell vertices so the box texcoords have a mesh to live on
 #: moves that one visual geom's size by a fraction of a micrometre. Collision
 #: geoms stay bit-exact. A tenth of a millimetre still fails.
 SHELL_VISUAL_GEOM = "upper_shell_link_visual"
@@ -245,15 +261,14 @@ def _rotate_vectors(quat: np.ndarray, vectors: np.ndarray) -> np.ndarray:
     return vectors + w * tangent + np.cross(spun, tangent)
 
 
-def shell_surface(model: mujoco.MjModel) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """STL-frame vertices, faces, and dorsal UVs for ``upper_shell_link``.
+def _shell_stl(model: mujoco.MjModel) -> tuple[np.ndarray, np.ndarray]:
+    """STL-frame vertices and faces for ``upper_shell_link``.
 
     MuJoCo stores the welded vertices already recentred into the inertia frame.
     ``mesh_quat`` and ``mesh_pos`` put them back in the STL frame, which is the
     frame the geom was authored in. In that frame the shell is a plate: about
     20 cm in X, 18 cm in Y and 5 cm thick in Z. X is forward (the display sits
-    at world +X) and Y is lateral, so the dorsal picture is the XY plane.
-    Dividing by one scale keeps a circle on the shell a circle.
+    at world +X) and Y is lateral.
     """
     mesh = mujoco.mjtObj.mjOBJ_MESH
     mid = mujoco.mj_name2id(model, mesh, "upper_shell_link")
@@ -264,13 +279,89 @@ def shell_surface(model: mujoco.MjModel) -> tuple[np.ndarray, np.ndarray, np.nda
     face_count = int(model.mesh_facenum[mid])
     faces = np.array(model.mesh_face[face_adr:face_adr + face_count], np.int64)
     original = _rotate_vectors(model.mesh_quat[mid], verts) + np.asarray(model.mesh_pos[mid])
-    lower = original.min(axis=0)
-    scale = float(np.max(original.max(axis=0) - lower))
-    uv = np.stack(
-        [(original[:, 0] - lower[0]) / scale, (original[:, 1] - lower[1]) / scale],
-        axis=1,
-    )
-    return original, faces, uv
+    return original, faces
+
+
+def shell_frame(verts: np.ndarray) -> tuple[np.ndarray, float, float]:
+    """``(lower, extent, uv_scale)`` of an STL-frame shell.
+
+    ``extent`` is the longest side of the bounding box. ``uv_scale`` is that
+    plus the spot margin on both ends: the distance one atlas cell covers.
+    """
+    lower = verts.min(axis=0)
+    extent = float(np.max(verts.max(axis=0) - lower))
+    uv_scale = extent + 2.0 * SHELL_SPOT_MARGIN_M
+    return lower, extent, uv_scale
+
+
+def _face_axis(verts: np.ndarray, faces: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Dominant normal axis of each face, and its area.
+
+    A face whose normal is mostly X faces forward or back, mostly Y is a
+    flank, mostly Z is the dorsal plate or its underside. A zero-area face
+    is reported as dorsal so it does not invent a side projection.
+    """
+    tri = verts[faces]
+    normal = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    length = np.linalg.norm(normal, axis=1)
+    axis = np.abs(normal).argmax(axis=1).astype(np.int64)
+    axis[length < 1e-16] = 2
+    return axis, length * 0.5
+
+
+def _atlas_uv(
+    points: np.ndarray, axis: np.ndarray, lower: np.ndarray, uv_scale: float,
+) -> np.ndarray:
+    """Box texcoords in the carapace atlas.
+
+    Axis 0 projects to (y, z), axis 1 to (x, z), axis 2 to (x, y). The column
+    of the atlas is the axis, so a flank face never reads the dorsal cell.
+    """
+    axis = np.asarray(axis, np.int64)
+    coord_u = np.where(axis == 0, points[:, 1], points[:, 0])
+    coord_v = np.where(axis == 2, points[:, 1], points[:, 2])
+    lower_u = np.where(axis == 0, lower[1], lower[0])
+    lower_v = np.where(axis == 2, lower[1], lower[2])
+    local_u = (coord_u - lower_u + SHELL_SPOT_MARGIN_M) / uv_scale
+    local_v = (coord_v - lower_v + SHELL_SPOT_MARGIN_M) / uv_scale
+    local_u = np.clip(local_u, 0.0, 1.0 - 1e-6)
+    local_v = np.clip(local_v, 0.0, 1.0 - 1e-6)
+    u = (axis.astype(np.float64) + local_u) / SHELL_ATLAS_COLS
+    v = local_v / SHELL_ATLAS_ROWS
+    return np.column_stack((u, v))
+
+
+def texcoord_metres(uv: np.ndarray, uv_scale: float) -> np.ndarray:
+    """Atlas texcoords back into metres in the face's own projection plane.
+
+    ``u`` runs across the three cells and ``v`` down the single row. Both come
+    back in metres at one scale, which is what keeps a painted disc a disc.
+    """
+    u = uv[..., 0] * SHELL_ATLAS_COLS * uv_scale
+    v = uv[..., 1] * SHELL_ATLAS_ROWS * uv_scale
+    return np.stack([u, v], axis=-1)
+
+
+def shell_surface(model: mujoco.MjModel) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Copied STL vertices, remapped faces, and one box texcoord per copy.
+
+    Projecting the whole shell onto the dorsal plane collapses a steep flank:
+    the face moves in Z and the texcoord does not, so a disc becomes a slit.
+    Each face instead takes the two axes perpendicular to its normal. A vertex
+    on the ridge between two planes is copied, one position per plane, because
+    an inline mesh can store only one texcoord per vertex — MJCF has no face
+    indices for them. The copies sit on the same surface, and the inertia fit
+    follows the surface, so the mass does not move.
+    """
+    verts, faces = _shell_stl(model)
+    axis, _area = _face_axis(verts, faces)
+    lower, _extent, uv_scale = shell_frame(verts)
+    corners = faces.reshape(-1).astype(np.int64)
+    keys = corners * 3 + np.repeat(axis, 3)
+    uniq, inv = np.unique(keys, return_inverse=True)
+    copied = verts[uniq // 3]
+    uv = _atlas_uv(copied, uniq % 3, lower, uv_scale)
+    return copied, inv.reshape(-1, 3), uv
 
 
 def _spot_density(u: np.ndarray, v: np.ndarray) -> np.ndarray:
@@ -306,10 +397,21 @@ def _stamp_circle(
 def _place_spots(
     image: np.ndarray, rng: np.random.Generator, scale: float, density,
     radii_m: tuple[float, ...], weights: tuple[float, ...], color_of, wraps: bool,
-    limit: int,
+    limit: int, pixel_of=None, px_per_metre: float | None = None,
 ) -> None:
-    """Stamp non-overlapping discs. ``scale`` is metres across one texture edge."""
+    """Stamp non-overlapping discs. ``scale`` is metres across the placement square.
+
+    ``pixel_of(u, v)`` and ``px_per_metre`` redirect the stamp into one cell of
+    an atlas. The default paints the whole image, which is what the leg tile
+    wants. Overlap stays in the ``(u, v)`` square so a redirected stamp rejects
+    the same neighbours it used to.
+    """
     height, width = image.shape[:2]
+    if px_per_metre is None:
+        px_per_metre = width / scale
+    if pixel_of is None:
+        def pixel_of(u: float, v: float) -> tuple[float, float]:
+            return u * (width - 1), v * (height - 1)
     chosen: list[tuple[float, float, float]] = []
     weights_arr = np.asarray(weights, np.float64)
     weights_arr /= weights_arr.sum()
@@ -322,7 +424,7 @@ def _place_spots(
             continue
         radius_m = float(rng.choice(np.asarray(radii_m), p=weights_arr))
         radius_m *= float(rng.uniform(0.85, 1.15))
-        radius_px = radius_m / scale * width
+        radius_px = radius_m * px_per_metre
         if any(
             (u - cu) ** 2 + (v - cv) ** 2 < ((radius_m + cr) / scale * 1.15) ** 2
             for cu, cv, cr in chosen
@@ -330,16 +432,14 @@ def _place_spots(
             continue
         mix = float(rng.random())
         color = color_of(mix)
-        _stamp_circle(image, u * (width - 1), v * (height - 1), radius_px, color)
+        px, py = pixel_of(u, v)
+        _stamp_circle(image, px, py, radius_px, color)
         if wraps:
             for ox in (-width, 0, width):
                 for oy in (-height, 0, height):
                     if ox == 0 and oy == 0:
                         continue
-                    _stamp_circle(
-                        image, u * (width - 1) + ox, v * (height - 1) + oy,
-                        radius_px, color,
-                    )
+                    _stamp_circle(image, px + ox, py + oy, radius_px, color)
         chosen.append((u, v, radius_m))
 
 
@@ -351,29 +451,118 @@ def _ivory_field(size: int, rng: np.random.Generator, peach: float) -> np.ndarra
     return _u8(ivory * (1.0 - peach * grain) + warm * (peach * grain))
 
 
-def _carapace(size: int = 1024) -> np.ndarray:
-    """Ivory dorsal plate with hard crimson and burgundy discs.
+def _spot_color(mix: float) -> tuple[int, int, int]:
+    return tuple(round(a + (b - a) * mix) for a, b in zip(
+        SPOT_CRIMSON, SPOT_BURGUNDY, strict=True,
+    ))
 
-    The discs are placed in the same UV the shell mesh carries, so a circle
-    here is a circle on the carapace. Density comes from ``_spot_density``.
+
+#: Discs to attempt on the front/back cell and the flank cell. The dorsal cell
+#: keeps its own count of 56, placed by the historical stream. Overlap rejection
+#: is what actually stops the flanks filling up: the side projection is a band
+#: about 5 cm tall.
+_AXIS_SPOT_LIMIT = {0: 18, 1: 24}
+
+
+def _place_axis_spots(
+    image: np.ndarray, verts: np.ndarray, faces: np.ndarray, face_axis: np.ndarray,
+    area: np.ndarray, axis_id: int, lower: np.ndarray, extent: float, uv_scale: float,
+) -> None:
+    """Discs on the faces that face ``axis_id``, in that column of the atlas.
+
+    Candidates are face centroids, area-weighted, accepted with ``_spot_density``
+    of their dorsal position. The stamp uses the same projection as the mesh,
+    so a flank centroid's disc lands on the flank faces and stays round there.
     """
-    rng = _rng(100)
-    image = _ivory_field(size, rng, peach=0.10)
-    # One texture edge is the shell's long axis, about 20.6 cm, measured from
-    # the STL-frame extent of upper_shell_link.
-    scale = 0.205529
+    mask = (face_axis == axis_id) & (area > 0.0)
+    centroids = verts[faces[mask]].mean(axis=1)
+    weights = area[mask]
+    weights = weights / weights.sum()
+    rng = _rng(410 + axis_id)
+    order = rng.choice(centroids.shape[0], size=centroids.shape[0], replace=False, p=weights)
+    height, width = image.shape[:2]
+    px_per_metre = (width - 1) / SHELL_ATLAS_COLS / uv_scale
+    # Projected metres, so two centroids on opposite flanks compete once.
+    projected = (1, 2) if axis_id == 0 else (0, 2)
+    chosen: list[tuple[float, float, float]] = []
+    radii = np.asarray((0.0045, 0.007, 0.010, 0.014, 0.019), np.float64)
+    weights_r = np.asarray((0.34, 0.28, 0.20, 0.12, 0.06), np.float64)
+    weights_r /= weights_r.sum()
+    limit = _AXIS_SPOT_LIMIT[axis_id]
+    for index in order:
+        if len(chosen) >= limit:
+            break
+        point = centroids[int(index)]
+        su = (float(point[0]) - float(lower[0])) / extent
+        sv = (float(point[1]) - float(lower[1])) / extent
+        if float(rng.random()) > float(_spot_density(su, sv)):
+            continue
+        radius_m = float(rng.choice(radii, p=weights_r))
+        radius_m *= float(rng.uniform(0.85, 1.15))
+        au = float(point[projected[0]])
+        av = float(point[projected[1]])
+        if any(
+            (au - cu) ** 2 + (av - cv) ** 2 < ((radius_m + cr) * 1.15) ** 2
+            for cu, cv, cr in chosen
+        ):
+            continue
+        local_u = (au - float(lower[projected[0]]) + SHELL_SPOT_MARGIN_M) / uv_scale
+        local_v = (av - float(lower[projected[1]]) + SHELL_SPOT_MARGIN_M) / uv_scale
+        reach = radius_m / uv_scale
+        if local_u - reach < 0.0 or local_u + reach > 1.0:
+            continue
+        if local_v - reach < 0.0 or local_v + reach > 1.0:
+            continue
+        uv = _atlas_uv(point.reshape(1, 3), np.asarray([axis_id]), lower, uv_scale)[0]
+        _stamp_circle(
+            image, float(uv[0]) * (width - 1), float(uv[1]) * (height - 1),
+            radius_m * px_per_metre, _spot_color(float(rng.random())),
+        )
+        chosen.append((au, av, radius_m))
 
-    def color_of(mix: float) -> tuple[int, int, int]:
-        return tuple(round(a + (b - a) * mix) for a, b in zip(
-            SPOT_CRIMSON, SPOT_BURGUNDY, strict=True,
-        ))
+
+def _carapace(cell: int = SHELL_ATLAS_CELL) -> np.ndarray:
+    """Ivory shell with hard crimson and burgundy discs, one cell per plane.
+
+    The dorsal cell is the historical placement: the same seed, after the same
+    6×6 ivory draw the previous picture consumed, so the crown does not jump.
+    The front and flank cells are separate streams. Density is still
+    ``_spot_density`` — front and outline first, crown last.
+    """
+    width = cell * SHELL_ATLAS_COLS
+    height = cell * SHELL_ATLAS_ROWS
+    verts, faces = _shell_stl(mujoco.MjModel.from_xml_path(str(SRC)))
+    face_axis, area = _face_axis(verts, faces)
+    lower, extent, uv_scale = shell_frame(verts)
+    grain = _value_noise(height, width, 8, _rng(120))[..., None]
+    ivory = _rgb(*IVORY)
+    warm = _rgb(*PEACH)
+    image = _u8(ivory * (1.0 - 0.10 * grain) + warm * (0.10 * grain))
+
+    # The old dorsal picture drew a 6×6 noise grid from this stream before the
+    # discs. Consuming it keeps those discs where they were.
+    rng = _rng(100)
+    rng.random((6, 6))
+    px_per_metre = (width - 1) / SHELL_ATLAS_COLS / uv_scale
+
+    def dorsal_pixel(u: float, v: float) -> tuple[float, float]:
+        local_u = (u * extent + SHELL_SPOT_MARGIN_M) / uv_scale
+        local_v = (v * extent + SHELL_SPOT_MARGIN_M) / uv_scale
+        px = ((2.0 + local_u) / SHELL_ATLAS_COLS) * (width - 1)
+        py = (local_v / SHELL_ATLAS_ROWS) * (height - 1)
+        return px, py
 
     _place_spots(
-        image, rng, scale, _spot_density,
+        image, rng, extent, _spot_density,
         radii_m=(0.0045, 0.007, 0.010, 0.014, 0.019),
         weights=(0.34, 0.28, 0.20, 0.12, 0.06),
-        color_of=color_of, wraps=False, limit=56,
+        color_of=_spot_color, wraps=False, limit=56,
+        pixel_of=dorsal_pixel, px_per_metre=px_per_metre,
     )
+    for axis_id in (0, 1):
+        _place_axis_spots(
+            image, verts, faces, face_axis, area, axis_id, lower, extent, uv_scale,
+        )
     return image
 
 
@@ -463,13 +652,13 @@ def _save_textures(texture_dir: Path) -> dict[str, np.ndarray]:
 
 
 def _bake_shell(spec: mujoco.MjSpec) -> None:
-    """Give the shell dorsal texcoords without a second mesh file.
+    """Give the shell box texcoords without a second mesh file.
 
     An STL cannot carry texcoords, and a ``texcoord`` attribute next to
     ``file`` is ignored. The vertices written here are the STL-frame positions
-    ``shell_surface`` reconstructs, so MuJoCo's inertia fit runs once, the same
-    way it does for the file. The collision mesh is a different geom and is
-    left on its STL.
+    ``shell_surface`` reconstructs, with a ridge vertex repeated once per
+    projection so each copy can carry that plane's texcoord. The collision
+    mesh is a different geom and is left on its STL.
     """
     reference = mujoco.MjModel.from_xml_path(str(SRC))
     original, faces, uv = shell_surface(reference)
@@ -569,7 +758,7 @@ def assert_physics_equal(src: Path, dst: Path) -> None:
     """Compile both files and require the dynamics arrays to be identical.
 
     The shell visual geom's size is the one exception, and only up to
-    ``SHELL_GEOM_SIZE_ATOL``: its vertices are written out so the dorsal
+    ``SHELL_GEOM_SIZE_ATOL``: its vertices are written out so the box
     texcoords can ride on them. Mass, inertia and every collision geom stay
     bit-exact.
     """

@@ -61,11 +61,11 @@ The stills are the HOME pose on `scenes/default.py`. Default on the left, crab o
 
 ![Three-quarter, default and crab](docs/media/crab-three-quarter.png)
 
-**Shell, from above.** The spots are hard discs in the shell's own dorsal plane, sparse on the crown.
+**Shell, from above.** Hard discs, sparse on the crown.
 
 ![Shell from above](docs/media/crab-close-above.png)
 
-**Shell, from the side.**
+**Shell, from the side.** The flank has its own projection, so the same discs stay round there.
 
 ![Shell from the side](docs/media/crab-close-side.png)
 

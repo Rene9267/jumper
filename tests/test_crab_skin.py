@@ -155,13 +155,31 @@ def _spot_aspects(mask: np.ndarray) -> np.ndarray:
     return np.asarray(aspects)
 
 
+def _edge_ratios(tri: np.ndarray, corner_m: np.ndarray) -> np.ndarray:
+    """3D edge length over the texcoord edge, for edges longer than half a millimetre.
+
+    ``tri`` is (face, 3, 3) and ``corner_m`` is the same corners in the
+    projection plane, (face, 3, 2) or (face, 3, 3).
+    """
+    ratios = []
+    for a, b in ((0, 1), (1, 2), (2, 0)):
+        d3 = np.linalg.norm(tri[:, b] - tri[:, a], axis=1)
+        d2 = np.linalg.norm(corner_m[:, b] - corner_m[:, a], axis=1)
+        ok = d3 > 5e-4
+        ratios.append(d3[ok] / np.maximum(d2[ok], 1e-9))
+    return np.concatenate(ratios)
+
+
 def test_the_spots_are_round_and_the_shell_is_ivory() -> None:
     """Crisp discs on an ivory shell, sparse on the crown and denser in front.
 
     A tiled texture on this dome follows the thin mesh axis and turns marks
-    into streaks. The shell mesh is the only one with texcoords, taken from
-    its own STL frame. Legs repeat a small dotted tile. The ivory mean has to
-    sit well above the old olive tile, which averaged about sRGB 106.
+    into streaks. A dorsal-only texcoord does the same on the steep flanks:
+    the face moves in Z and the coordinate does not, so a disc becomes a slit.
+    The shell is the only mesh with texcoords, and a flank face reads the side
+    cell of the atlas rather than the dorsal one. Legs repeat a small dotted
+    tile. The ivory mean has to sit well above the old olive tile, which
+    averaged about sRGB 106.
     """
     base = mujoco.MjModel.from_xml_path(str(JUMPER_XML))
     assert int(np.max(base.mesh_texcoordnum)) == 0, "the premise: the STLs grew UVs"
@@ -175,6 +193,11 @@ def test_the_spots_are_round_and_the_shell_is_ivory() -> None:
 
     mod = _builder()
     shell_id = mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MESH, "upper_shell_link")
+    base_shell = mujoco.mj_name2id(base, mujoco.mjtObj.mjOBJ_MESH, "upper_shell_link")
+    # Ridge vertices are copied, one per projection, because an inline mesh
+    # stores one texcoord per vertex. The copies sit on the original surface;
+    # the physics test is what checks the mass did not follow the vertex mean.
+    assert int(crab.mesh_vertnum[shell_id]) > int(base.mesh_vertnum[base_shell])
     assert int(crab.mesh_texcoordnum[shell_id]) == int(crab.mesh_vertnum[shell_id])
     others = [i for i in range(crab.nmesh) if i != shell_id]
     assert int(np.max(crab.mesh_texcoordnum[others])) == 0
@@ -210,20 +233,57 @@ def test_the_spots_are_round_and_the_shell_is_ivory() -> None:
     bar[30:34, 4:60] = True
     assert float(_spot_aspects(bar)[0]) > 4.0
 
-    _original, _faces, uv = mod.shell_surface(base)
+    original, faces, uv = mod.shell_surface(base)
+    corner = uv[faces]
+    # One sample per face, at the centroid. The projection is linear, so the
+    # centroid's texcoord is the mean of the corners.
+    mean_uv = corner.mean(axis=1)
     height, width = carapace.shape[:2]
-    x = np.clip(np.rint(uv[:, 0] * (width - 1)).astype(int), 0, width - 1)
-    y = np.clip(np.rint(uv[:, 1] * (height - 1)).astype(int), 0, height - 1)
+    x = np.clip(np.rint(mean_uv[:, 0] * (width - 1)).astype(int), 0, width - 1)
+    y = np.clip(np.rint(mean_uv[:, 1] * (height - 1)).astype(int), 0, height - 1)
     on_spot = carapace[y, x, 1] < 140
-    front = uv[:, 0] >= np.quantile(uv[:, 0], 0.75)
-    back = uv[:, 0] <= np.quantile(uv[:, 0], 0.25)
-    centre_u = np.median(uv[:, 0])
-    centre_v = np.median(uv[:, 1])
-    radial = np.hypot(uv[:, 0] - centre_u, uv[:, 1] - centre_v)
+    column = np.floor(mean_uv[:, 0] * mod.SHELL_ATLAS_COLS + 1e-9).astype(int)
+    tri = original[faces]
+    normal = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    dominant = np.abs(normal).argmax(axis=1)
+    # A dorsal texcoord would file a flank face under whichever column its X
+    # happens to fall in. Every flank face has to read the side cell.
+    assert np.all(column[dominant == 1] == 1)
+    assert np.all(column[dominant == 2] == 2)
+    assert np.all(column[dominant == 0] == 0)
+    same = np.floor(corner[:, :, 0] * mod.SHELL_ATLAS_COLS + 1e-9).astype(int)
+    assert np.all(same[:, 0] == same[:, 1]) and np.all(same[:, 0] == same[:, 2])
+
+    lower, extent, uv_scale = mod.shell_frame(original)
+    corner_m = mod.texcoord_metres(corner, uv_scale)
+    side = dominant == 1
+    side_box = _edge_ratios(tri[side], corner_m[side])
+    assert float(np.quantile(side_box, 0.99)) < 1.8, float(np.quantile(side_box, 0.99))
+    assert float(np.median(side_box)) < 1.25, float(np.median(side_box))
+    # Control: the same edges measured in the dorsal plane. The flanks really
+    # do stretch there — a projection that ignored Z would pass the box check
+    # above if this number were already near 1.
+    dorsal_only = np.concatenate([tri[:, :, :2], np.zeros(tri.shape[:2] + (1,))], axis=2)
+    side_dorsal = _edge_ratios(tri[side], dorsal_only[side])
+    assert float(np.quantile(side_dorsal, 0.9)) > 3.0, float(np.quantile(side_dorsal, 0.9))
+
+    dorsal = dominant == 2
+    forward = (tri[dorsal].mean(axis=1)[:, 0] - lower[0]) / extent
+    lateral = (tri[dorsal].mean(axis=1)[:, 1] - lower[1]) / extent
+    on_dorsal = on_spot[dorsal]
+    front = forward >= np.quantile(forward, 0.75)
+    back = forward <= np.quantile(forward, 0.25)
+    radial = np.hypot(forward - np.median(forward), lateral - np.median(lateral))
     crown = radial <= np.quantile(radial, 0.25)
     rim = radial >= np.quantile(radial, 0.75)
-    assert float(on_spot[front].mean()) > float(on_spot[back].mean())
-    assert float(on_spot[rim].mean()) > float(on_spot[crown].mean())
+    assert float(on_dorsal[front].mean()) > float(on_dorsal[back].mean())
+    assert float(on_dorsal[rim].mean()) > float(on_dorsal[crown].mean())
+    # The flank cell carries its own discs. Front against back is measured on
+    # the dorsal cell, where the crown is the sparse part; both ends of a
+    # flank are outline, so both are dense.
+    flank = dominant == 1
+    assert float(on_spot[flank].mean()) > float(on_dorsal[crown].mean())
+    assert float(on_spot[flank].mean()) > 0.02
 
     ventral = np.asarray(Image.open(TEXTURES / "ventral.png")).reshape(-1, 3).astype(np.float64)
     hi = ventral.max(axis=1)
