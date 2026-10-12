@@ -860,26 +860,26 @@ edits the XML.
 
 ### The crab skin
 
-`assets/jumper/jumper_crab.xml` is a second look for the same robot. `assets/jumper/tools/build_skin.py` loads `jumper.xml` through MjSpec, writes that file, and saves three seeded tiles under `assets/jumper/textures/` (`carapace.png`, `ventral.png`, `tip.png`). NumPy and Pillow draw them. The seed is `SEED` in the script, so a re-run reproduces the committed pictures. The meshes stay the STLs from `jumper.xml`.
+`assets/jumper/jumper_crab.xml` is a second look for the same robot. `assets/jumper/tools/build_skin.py` loads `jumper.xml` through MjSpec, writes that file, and saves four seeded pictures under `assets/jumper/textures/` (`carapace.png`, `legs.png`, `ventral.png`, `tip.png`). NumPy and Pillow draw them. The seed is `SEED` in the script, so a re-run reproduces the committed pictures. The swatches are `IVORY`, `PEACH`, `SPOT_CRIMSON` and `SPOT_BURGUNDY` at the top of the script.
 
-The visual STLs have no texture coordinates, so a 2D texture with `texuniform` off is a single texel. A cube map does paint the shell, and it also ignores `texrepeat`, which leaves the dome's projection pinch the size of the geom. The skin is a tileable 2D picture with `texuniform` on and `texrepeat` at 6, so a vein is about a centimetre and the pinch is smaller than a pixel at the one-to-three metre distance of the footage. A direct close-up from above can still show a little convergence. The geom colour multiplies the texture: a dark rgba turns the shell black, which is why the visual geoms stay a near-white tint and the picture carries the colour.
+The colours are *Calappa granulata*, the Mediterranean box crab: a light cream-ivory carapace with a warm peach tint, and crisp crimson-to-burgundy discs (`#9E2235` to `#6E1E3A`). The discs are larger and more numerous toward the front rim and the outline, and sparse on the crown. They are hard-edged circles, not veins. Legs are the same ivory with a few small reddish dots. Claw tips are a darker red-brown. The geom colour multiplies the texture, so visual geoms stay a near-white tint and the picture carries the colour.
 
-The colours are a Mediterranean shore crab, *Pachygrapsus marmoratus* and *Carcinus aestuarii*: a mid olive-brown carapace with thin dark olive-purple veins and small pale flecks. The darker half of the carapace sits near sRGB 90–120, so it reads as olive under the default headlight rather than as black:
+`texuniform` maps a 2D picture from the mesh's stored X and Y. On this shell those axes are the thin direction and one long direction, so a tiled picture turns into lengthwise streaks. The shell mesh is therefore written with texcoords in the STL frame's dorsal plane (forward and lateral), and `texrepeat` stays 1. No extra mesh file is committed. Legs use `texrepeat` 2, which keeps a dot about a centimetre across.
 
 | Group | Links | Look |
 |---|---|---|
-| shell | `upper_shell_link` | mid olive-brown, fine dark veins, pale flecks |
-| underside | `base_link` | pale cream-ochre |
-| leg | walking-leg calves and foot tips | the same marble, a little more olive |
-| leg joint | the four hips and the four thighs | pale cream-ochre, the same family as the belly |
-| claw | shoulder, upper arm, palm | the marble, a little more purple-brown |
-| claw joint | forearm, pads, grip inserts | pale cream-ochre |
-| tip | `finger` and `finger_tip` | dark brown-black |
+| shell | `upper_shell_link` | ivory, crisp red-purple spots, denser at the front and the rim |
+| underside | `base_link` | plain ivory |
+| leg | walking-leg calves and foot tips | ivory with a few reddish dots |
+| leg joint | the four hips and the four thighs | the same dotted ivory |
+| claw | shoulder, upper arm, palm | dotted ivory |
+| claw joint | forearm, pads, grip inserts | plain ivory |
+| tip | `finger` and `finger_tip` | darker red-brown |
 | sensor | display, camera, ToF | left black |
 
-`reflectance` is 0. A mirror of a dark sky pulls the shell toward black, and it is not how chitin looks. Specular on the cream is only a soft highlight, so the thighs and forearms do not go white under the beach sun. Each `*_meshcol` geom keeps a flat rgba of its texture's average colour and no material. `--strip-visual` deletes the visual meshes, and the collision geom that remains is still crab-coloured.
+`reflectance` is 0, and specular on the shell is only a soft highlight, so a spot does not smear into a varnish streak. Each `*_meshcol` geom keeps a flat rgba of its texture's average colour and no material. `--strip-visual` deletes the visual meshes, and the collision geom that remains is still crab-coloured.
 
-Collision geometry, `contype`, `conaffinity`, friction, mass, inertia, joints and actuators are the default model's. `tests/test_crab_skin.py` compiles both files and compares those arrays exactly, and it compares the visual silhouettes: default and crab have to overlap by more than 98% from the front, the side, three-quarter and above. The script does the same dynamics check before it replaces the XML, and it does not write `jumper.xml`.
+Collision geometry, `contype`, `conaffinity`, friction, mass, inertia, joints and actuators are the default model's. `tests/test_crab_skin.py` compiles both files and compares those arrays. The shell visual's bounding size may move by a fraction of a micrometre, because its vertices are inlined to carry the texcoords; every collision geom stays bit-exact. The test also compares the visual silhouettes: default and crab have to overlap by more than 98% from the front, the side, three-quarter and above. The script does the same dynamics check before it replaces the XML, and it does not write `jumper.xml`.
 
 Every jumper task registers the skin, the dance tasks included (`jumper.dance`, `jumper.dance_brazilian`, `jumper.dance_dream_wings`, `jumper.dance_maze`, `jumper.dance_waist`). The first asset is still `jumper`, so training, replay and export behave as before until something asks for `crab`. `--list` prints both.
 

@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:84a4c4458199a49d -->
+<!-- tracks: README.md @ sha256:fa62b66f086da88e -->
 
 ![跳跳](docs/media/jumper-hero-zh.png)
 
@@ -47,7 +47,7 @@
 
 ## 滨蟹配色
 
-`--model crab` 是同一套跳跳机构，涂成地中海滨蟹（*Pachygrapsus marmoratus*、*Carcinus aestuarii*）的颜色：深橄榄色与褐紫色相间的大理石纹背甲，浅奶油色的腹面和腿节，深褐近黑的螯尖。显示屏、相机和 ToF 保持黑色。`assets/jumper/jumper.xml` 不动，两份模型编译出的质量、惯量、碰撞和关节相同。
+`--model crab` 是同一套跳跳机构，涂成地中海箱蟹（*Calappa granulata*）的颜色：浅象牙色背甲上是边缘清晰的绯红和酒红圆斑，前缘和轮廓更密，步足是带少量红点的象牙色，螯尖是更深的红褐色。显示屏、相机和 ToF 保持黑色。`assets/jumper/jumper.xml` 不动，两份模型编译出的质量、惯量、碰撞和关节相同。
 
 静帧是 `scenes/default.py` 上的 HOME 姿态。左侧是默认外观，右侧是滨蟹外观。
 
@@ -63,7 +63,7 @@
 
 ![斜前方，默认与滨蟹](docs/media/crab-three-quarter.png)
 
-**背甲，俯视。** 大理石纹是重复平铺的细深色脉络。网格就是默认的 STL。
+**背甲，俯视。** 圆斑是背甲自身背面平面上的硬边圆盘，顶部稀疏。
 
 ![背甲俯视](docs/media/crab-close-above.png)
 

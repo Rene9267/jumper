@@ -45,7 +45,7 @@ This repo is Jumper’s AI toolkit for appearance, motion, and scene creation. O
 
 ## Shore-crab colours
 
-`--model crab` is the same Jumper mechanism in the colours of a Mediterranean shore crab (*Pachygrapsus marmoratus*, *Carcinus aestuarii*): a dark olive and brown-purple marbled carapace, a pale cream underside and leg joints, and dark brown-black claw tips. The display, the camera and the ToF stay black. `assets/jumper/jumper.xml` is unchanged, and the two models compile to the same mass, inertia, collision and joints.
+`--model crab` is the same Jumper mechanism in the colours of a Mediterranean box crab (*Calappa granulata*): a light ivory carapace with crisp crimson and burgundy spots, denser toward the front and the rim, ivory legs with a few reddish dots, and darker red-brown claw tips. The display, the camera and the ToF stay black. `assets/jumper/jumper.xml` is unchanged, and the two models compile to the same mass, inertia, collision and joints.
 
 The stills are the HOME pose on `scenes/default.py`. Default on the left, crab on the right.
 
@@ -61,7 +61,7 @@ The stills are the HOME pose on `scenes/default.py`. Default on the left, crab o
 
 ![Three-quarter, default and crab](docs/media/crab-three-quarter.png)
 
-**Shell, from above.** The marble is a repeated tile of thin dark veins. The meshes are the default STLs.
+**Shell, from above.** The spots are hard discs in the shell's own dorsal plane, sparse on the crown.
 
 ![Shell from above](docs/media/crab-close-above.png)
 

@@ -10,19 +10,23 @@ and refuses to keep an XML whose dynamics differ.
     python assets/jumper/tools/build_skin.py
     python assets/jumper/tools/build_skin.py --preview
 
-The colours follow *Pachygrapsus marmoratus* and *Carcinus aestuarii*: a dark
-olive / brown-purple marbled carapace, a pale cream-ochre underside and leg
-joints, and dark brown-black claw tips. The display, the camera and the ToF
-stay black, which is what keeps the machine recognisable.
+The colours are *Calappa granulata*, the Mediterranean box crab: a light
+cream-ivory carapace with a warm peach tint, crisp crimson to burgundy spots,
+cream legs with a few small reddish dots, and darker red-brown claw tips. The
+display, the camera and the ToF stay black, which is what keeps the machine
+recognisable. `IVORY`, `PEACH`, `SPOT_CRIMSON` and `SPOT_BURGUNDY` at the top
+of this file are the swatches.
 
-The visual STLs have no texture coordinates. A 2D texture with `texuniform`
-off is one texel. A cube map does paint the mesh, but MuJoCo ignores
-`texrepeat` on a cube, so the dome's projection pinch stays the size of the
-geom. The skin is therefore one tileable 2D picture per material, `texuniform`
-on, `texrepeat` large enough that a vein is about a centimetre. The pinch is
-then smaller than a pixel at the one-to-three metre distance of the footage.
-The pictures are NumPy and Pillow only, seed `SEED`. The meshes stay the
-original STLs, so the crab has the same silhouette as the default model.
+The visual STLs have no texture coordinates. `texuniform` paints a 2D picture
+from the mesh's stored X and Y, and on this shell those axes are the thin
+direction and one long direction, so a tile becomes lengthwise streaks. The
+shell therefore carries its own texcoords, built from the STL frame's dorsal
+plane (world X and Y) and written beside the original vertices. Spots are
+hard-edged circles in that plane: larger toward the front rim and the outline,
+sparse on the crown. Legs use a small `texrepeat`, so their few dots stay
+dots. The pictures are NumPy and Pillow only, seed `SEED`. No second mesh file
+is committed. The shell's collision geom is untouched, so the silhouette
+matches the default model.
 
 The geom colour multiplies the texture. Leaving the factory red, or writing the
 texture's own dark average into `rgba`, crushes the shell toward black and
@@ -121,26 +125,42 @@ class Finish:
     specular: float
     shininess: float
     roughness: float
+    texrepeat: tuple[float, float]
+    texuniform: bool
 
 
-#: How many times the tile covers a geom. Measured: a cube texture stores
-#: `texrepeat` and then renders as if it were 1, so the repeat has to be a 2D
-#: texture with `texuniform`. 6 puts several vein cells across the shell and
-#: leaves the projection pinch smaller than the robot is at a couple of metres.
-TEX_REPEAT = (6.0, 6.0)
+#: *Calappa granulata*. sRGB bytes. These are the only colour knobs.
+IVORY = (246, 236, 220)
+PEACH = (240, 210, 180)
+SPOT_CRIMSON = (158, 34, 53)    # #9E2235
+SPOT_BURGUNDY = (110, 30, 58)   # #6E1E3A
+LEG_DOT = (176, 48, 62)
+TIP_RED_BROWN = (122, 54, 40)
 
-#: Names of the cube faces the previous skin wrote. A re-run deletes them.
+#: The shell is not tiled: texrepeat 1 on its own texcoords. Legs repeat twice,
+#: so a dot stays about a centimetre instead of being stretched into a hairline.
+LEG_REPEAT = (2.0, 2.0)
+SHELL_REPEAT = (1.0, 1.0)
+
+#: Names of the cube faces an older skin wrote. A re-run deletes them.
 _CUBE_FACES = ("right", "left", "up", "down", "front", "back")
 
+#: Low specular. A sharp spot with a glossy highlight reads as a varnish streak.
 MATERIALS: dict[str, Finish] = {
-    "shell": Finish("carapace", (1.0, 1.0, 1.0), 0.12, 0.18, 0.62),
-    "leg": Finish("carapace", (0.96, 1.0, 0.90), 0.10, 0.16, 0.68),
-    "claw": Finish("carapace", (1.0, 0.96, 0.97), 0.14, 0.22, 0.55),
-    "underside": Finish("ventral", (1.0, 1.0, 1.0), 0.03, 0.06, 0.92),
-    "leg_joint": Finish("ventral", (0.98, 0.97, 0.95), 0.03, 0.06, 0.92),
-    "claw_joint": Finish("ventral", (1.0, 0.98, 0.96), 0.035, 0.07, 0.90),
-    "tip": Finish("tip", (1.0, 1.0, 1.0), 0.22, 0.34, 0.42),
+    "shell": Finish("carapace", (1.0, 0.99, 0.97), 0.03, 0.05, 0.94, SHELL_REPEAT, False),
+    "leg": Finish("legs", (1.0, 0.99, 0.97), 0.035, 0.06, 0.92, LEG_REPEAT, True),
+    "claw": Finish("legs", (1.0, 0.98, 0.96), 0.04, 0.06, 0.90, LEG_REPEAT, True),
+    "underside": Finish("ventral", (1.0, 1.0, 1.0), 0.03, 0.06, 0.92, (1.0, 1.0), True),
+    "leg_joint": Finish("legs", (0.99, 0.98, 0.96), 0.03, 0.06, 0.92, LEG_REPEAT, True),
+    "claw_joint": Finish("ventral", (1.0, 0.99, 0.97), 0.03, 0.06, 0.92, (1.0, 1.0), True),
+    "tip": Finish("tip", (1.0, 1.0, 1.0), 0.08, 0.12, 0.75, (1.0, 1.0), True),
 }
+
+#: Inlining the shell vertices so the dorsal texcoords have a mesh to live on
+#: moves that one visual geom's size by a fraction of a micrometre. Collision
+#: geoms stay bit-exact. A tenth of a millimetre still fails.
+SHELL_VISUAL_GEOM = "upper_shell_link_visual"
+SHELL_GEOM_SIZE_ATOL = 1e-6
 
 
 def appearance(body: str) -> str:
@@ -148,12 +168,13 @@ def appearance(body: str) -> str:
 
     Groups, matched on the link name:
 
-    * shell — the upper shell. The chassis (`base_link`) is the underside.
-    * leg — calves and foot tips of the four walking legs.
-    * leg joint — hips and thighs, the pale cream of the belly.
-    * claw — the two front chelipeds, except their tips. Forearms, pads and
-      grip inserts are the same pale cream.
-    * tip — `finger` and `finger_tip`, the dark dactyl ends.
+    * shell — the upper shell, ivory with crimson spots. The chassis
+      (`base_link`) is the plain ivory underside.
+    * leg — calves and foot tips, ivory with a few reddish dots.
+    * leg joint — hips and thighs, the same dotted ivory.
+    * claw — the two front chelipeds, except their tips, dotted ivory.
+      Forearms, pads and grip inserts stay plain ivory.
+    * tip — `finger` and `finger_tip`, darker red-brown.
     * sensor — display, camera, ToF.
     """
     if body in SENSORS:
@@ -206,102 +227,197 @@ def _value_noise(h: int, w: int, cells: int, rng: np.random.Generator) -> np.nda
     return (g00 * (1.0 - fx) + g01 * fx) * (1.0 - fy) + (g10 * (1.0 - fx) + g11 * fx) * fy
 
 
-def _fbm(
-    h: int, w: int, rng: np.random.Generator, octaves: int = 5, base: int = 2,
-    persistence: float = 0.5,
-) -> np.ndarray:
-    acc = np.zeros((h, w), np.float64)
-    amp = 1.0
-    total = 0.0
-    for i in range(octaves):
-        acc += amp * _value_noise(h, w, base * 2**i, rng)
-        total += amp
-        amp *= persistence
-    return acc / total
-
-
-def _lerp(a: np.ndarray, b: np.ndarray, t: np.ndarray) -> np.ndarray:
-    tt = t[..., None]
-    return a * (1.0 - tt) + b * tt
-
-
 def _u8(color: np.ndarray) -> np.ndarray:
     return np.clip(np.rint(np.clip(color, 0.0, 1.0) * 255.0), 0, 255).astype(np.uint8)
 
 
-def _span(v: np.ndarray) -> np.ndarray:
-    """Spread a field that has collapsed toward 0.5 out across ``[0, 1]``.
-
-    Fractional Brownian motion averages to a narrow band, and a marble built on
-    that band is one brown. The percentiles are part of the seed: same noise,
-    same stretch.
-    """
-    lo, hi = np.percentile(v, (2.0, 98.0))
-    return np.clip((v - lo) / (hi - lo + 1e-8), 0.0, 1.0)
-
-
 def _rgb(r: float, g: float, b: float) -> np.ndarray:
     """sRGB bytes as a linear mix weight. The PNG stores sRGB; MuJoCo is told so."""
-    return np.array([r, g, b]) / 255.0
+    return np.array([r, g, b], np.float64) / 255.0
 
 
-def _ridge(field: np.ndarray, width: float) -> np.ndarray:
-    """1 on the midline of a tileable field, 0 outside a thin band."""
-    return np.clip((width - np.abs(field - 0.5)) / width, 0.0, 1.0)
+def _rotate_vectors(quat: np.ndarray, vectors: np.ndarray) -> np.ndarray:
+    """Rotate row vectors by a MuJoCo quaternion ``(w, x, y, z)``."""
+    w = float(quat[0])
+    qv = np.asarray(quat[1:], np.float64)
+    spun = np.broadcast_to(qv, vectors.shape)
+    tangent = 2.0 * np.cross(spun, vectors)
+    return vectors + w * tangent + np.cross(spun, tangent)
 
 
-def _carapace(size: int = SIZE) -> np.ndarray:
-    """Mid olive-brown with thin dark olive-purple veins and small pale flecks.
+def shell_surface(model: mujoco.MjModel) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """STL-frame vertices, faces, and dorsal UVs for ``upper_shell_link``.
 
-    The field tiles, so `texrepeat` does not draw a seam. The dark half sits
-    near sRGB 90–120: lower than that, and the default headlight renders black.
+    MuJoCo stores the welded vertices already recentred into the inertia frame.
+    ``mesh_quat`` and ``mesh_pos`` put them back in the STL frame, which is the
+    frame the geom was authored in. In that frame the shell is a plate: about
+    20 cm in X, 18 cm in Y and 5 cm thick in Z. X is forward (the display sits
+    at world +X) and Y is lateral, so the dorsal picture is the XY plane.
+    Dividing by one scale keeps a circle on the shell a circle.
     """
-    h = w = size
-    rng = _rng(100)
-    coarse = _span(_fbm(h, w, rng, octaves=5, base=6, persistence=0.55))
-    fine = _span(_fbm(h, w, rng, octaves=4, base=12, persistence=0.5))
-    grain = _value_noise(h, w, 48, rng)
-    speck = _value_noise(h, w, 40, rng)
-    vein = np.maximum(_ridge(coarse, 0.05), _ridge(fine, 0.028) * 0.85)
-    fleck = np.clip((speck - 0.86) / 0.08, 0.0, 1.0)
+    mesh = mujoco.mjtObj.mjOBJ_MESH
+    mid = mujoco.mj_name2id(model, mesh, "upper_shell_link")
+    adr = int(model.mesh_vertadr[mid])
+    count = int(model.mesh_vertnum[mid])
+    verts = np.array(model.mesh_vert[adr:adr + count], np.float64)
+    face_adr = int(model.mesh_faceadr[mid])
+    face_count = int(model.mesh_facenum[mid])
+    faces = np.array(model.mesh_face[face_adr:face_adr + face_count], np.int64)
+    original = _rotate_vectors(model.mesh_quat[mid], verts) + np.asarray(model.mesh_pos[mid])
+    lower = original.min(axis=0)
+    scale = float(np.max(original.max(axis=0) - lower))
+    uv = np.stack(
+        [(original[:, 0] - lower[0]) / scale, (original[:, 1] - lower[1]) / scale],
+        axis=1,
+    )
+    return original, faces, uv
 
-    color = _lerp(_rgb(136, 122, 84), _rgb(124, 110, 74), grain * 0.4)
-    color = _lerp(color, _rgb(52, 34, 58), vein)
-    color = _lerp(color, _rgb(210, 190, 146), fleck * (1.0 - vein))
-    return _u8(color)
+
+def _spot_density(u: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """More spots on the front rim and the outline, almost none on the crown.
+
+    ``u`` grows toward the display. The crown is the middle of the dorsal
+    plate; ``v`` only covers about 0.88 of the square because the shell is
+    slightly longer than it is wide.
+    """
+    du = (u - 0.50) / 0.50
+    dv = (v - 0.44) / 0.44
+    edge = np.clip(np.hypot(du, dv), 0.0, 1.0)
+    front = np.clip((u - 0.25) / 0.75, 0.0, 1.0)
+    return np.clip(0.04 + 0.72 * edge**1.5 + 0.50 * front * edge, 0.0, 1.0)
+
+
+def _stamp_circle(
+    image: np.ndarray, x: float, y: float, radius: float, color: tuple[int, int, int],
+) -> None:
+    """Hard disc. No falloff, so the spot stays a spot instead of a smear."""
+    height, width = image.shape[:2]
+    x0 = max(0, int(np.floor(x - radius)))
+    x1 = min(width, int(np.ceil(x + radius)) + 1)
+    y0 = max(0, int(np.floor(y - radius)))
+    y1 = min(height, int(np.ceil(y + radius)) + 1)
+    if x0 >= x1 or y0 >= y1:
+        return
+    yy, xx = np.ogrid[y0:y1, x0:x1]
+    mask = (xx - x) ** 2 + (yy - y) ** 2 <= radius ** 2
+    image[y0:y1, x0:x1][mask] = color
+
+
+def _place_spots(
+    image: np.ndarray, rng: np.random.Generator, scale: float, density,
+    radii_m: tuple[float, ...], weights: tuple[float, ...], color_of, wraps: bool,
+    limit: int,
+) -> None:
+    """Stamp non-overlapping discs. ``scale`` is metres across one texture edge."""
+    height, width = image.shape[:2]
+    chosen: list[tuple[float, float, float]] = []
+    weights_arr = np.asarray(weights, np.float64)
+    weights_arr /= weights_arr.sum()
+    for _ in range(4000):
+        if len(chosen) >= limit:
+            break
+        u = float(rng.random())
+        v = float(rng.random())
+        if float(rng.random()) > float(np.asarray(density(u, v))):
+            continue
+        radius_m = float(rng.choice(np.asarray(radii_m), p=weights_arr))
+        radius_m *= float(rng.uniform(0.85, 1.15))
+        radius_px = radius_m / scale * width
+        if any(
+            (u - cu) ** 2 + (v - cv) ** 2 < ((radius_m + cr) / scale * 1.15) ** 2
+            for cu, cv, cr in chosen
+        ):
+            continue
+        mix = float(rng.random())
+        color = color_of(mix)
+        _stamp_circle(image, u * (width - 1), v * (height - 1), radius_px, color)
+        if wraps:
+            for ox in (-width, 0, width):
+                for oy in (-height, 0, height):
+                    if ox == 0 and oy == 0:
+                        continue
+                    _stamp_circle(
+                        image, u * (width - 1) + ox, v * (height - 1) + oy,
+                        radius_px, color,
+                    )
+        chosen.append((u, v, radius_m))
+
+
+def _ivory_field(size: int, rng: np.random.Generator, peach: float) -> np.ndarray:
+    """Ivory, warmed a little toward peach. The variation is a soft cloud."""
+    grain = _value_noise(size, size, 6, rng)[..., None]
+    ivory = _rgb(*IVORY)
+    warm = _rgb(*PEACH)
+    return _u8(ivory * (1.0 - peach * grain) + warm * (peach * grain))
+
+
+def _carapace(size: int = 1024) -> np.ndarray:
+    """Ivory dorsal plate with hard crimson and burgundy discs.
+
+    The discs are placed in the same UV the shell mesh carries, so a circle
+    here is a circle on the carapace. Density comes from ``_spot_density``.
+    """
+    rng = _rng(100)
+    image = _ivory_field(size, rng, peach=0.10)
+    # One texture edge is the shell's long axis, about 20.6 cm, measured from
+    # the STL-frame extent of upper_shell_link.
+    scale = 0.205529
+
+    def color_of(mix: float) -> tuple[int, int, int]:
+        return tuple(round(a + (b - a) * mix) for a, b in zip(
+            SPOT_CRIMSON, SPOT_BURGUNDY, strict=True,
+        ))
+
+    _place_spots(
+        image, rng, scale, _spot_density,
+        radii_m=(0.0045, 0.007, 0.010, 0.014, 0.019),
+        weights=(0.34, 0.28, 0.20, 0.12, 0.06),
+        color_of=color_of, wraps=False, limit=56,
+    )
+    return image
+
+
+def _legs(size: int = SIZE) -> np.ndarray:
+    """Ivory with a few small hard reddish dots. The tile repeats twice."""
+    rng = _rng(150)
+    image = _ivory_field(size, rng, peach=0.06)
+    # A 2 cm tile at repeat 2 is about a centimetre on a leg link.
+    scale = 0.04
+
+    def color_of(_mix: float) -> tuple[int, int, int]:
+        return LEG_DOT
+
+    def everywhere(u: float, v: float) -> float:
+        return 0.55
+
+    _place_spots(
+        image, rng, scale, everywhere,
+        radii_m=(0.0016, 0.0024, 0.0032),
+        weights=(0.5, 0.35, 0.15),
+        color_of=color_of, wraps=True, limit=12,
+    )
+    return image
 
 
 def _ventral(size: int = SIZE) -> np.ndarray:
-    """Pale cream-ochre, darker than a white the beach sun clips to plastic.
-
-    The stains stay inside the cream. A saturated ochre reads as orange.
-    """
-    h = w = size
-    rng = _rng(200)
-    field = _span(_fbm(h, w, rng, octaves=4, base=4))
-    stain = _span(_fbm(h, w, rng, octaves=3, base=3))
-    grain = _value_noise(h, w, 36, rng)
-
-    color = _lerp(_rgb(170, 156, 134), _rgb(188, 174, 152), field)
-    color = _lerp(color, _rgb(204, 190, 170), np.clip((field - 0.55) * 2.2, 0.0, 1.0) * 0.55)
-    color = _lerp(color, _rgb(148, 132, 110), np.clip((stain - 0.78) * 6.0, 0.0, 1.0) * 0.35)
-    color *= (0.99 + 0.02 * grain)[..., None]
-    return _u8(color)
+    """Plain ivory underside, only a hint of peach so it is not a flat fill."""
+    return _ivory_field(size, _rng(200), peach=0.08)
 
 
 def _tip(size: int = SIZE) -> np.ndarray:
-    """Dark brown-black chitin, with a little grain so the tip is not plastic."""
-    h = w = size
+    """Darker red-brown claw tips, with a little grain and no stripes."""
     rng = _rng(300)
-    field = _span(_fbm(h, w, rng, octaves=4, base=5))
-    grain = _value_noise(h, w, 64, rng)
-    color = _lerp(_rgb(34, 18, 12), _rgb(78, 42, 24), field)
-    color *= (0.86 + 0.28 * grain)[..., None]
-    return _u8(color)
+    grain = _value_noise(size, size, 16, rng)[..., None]
+    base = _rgb(*TIP_RED_BROWN)
+    return _u8(base * (0.92 + 0.16 * grain))
 
 
-def carapace(size: int = SIZE) -> np.ndarray:
+def carapace(size: int = 1024) -> np.ndarray:
     return _carapace(size)
+
+
+def legs(size: int = SIZE) -> np.ndarray:
+    return _legs(size)
 
 
 def ventral(size: int = SIZE) -> np.ndarray:
@@ -314,6 +430,7 @@ def tip(size: int = SIZE) -> np.ndarray:
 
 TEXTURES = {
     "carapace": carapace,
+    "legs": legs,
     "ventral": ventral,
     "tip": tip,
 }
@@ -334,9 +451,9 @@ def flat_rgba(image: np.ndarray, tint: tuple[float, float, float]) -> list[float
 # ── Model ─────────────────────────────────────────────────────────────────
 
 
-def _save_textures(texture_dir: Path, size: int = SIZE) -> dict[str, np.ndarray]:
+def _save_textures(texture_dir: Path) -> dict[str, np.ndarray]:
     texture_dir.mkdir(parents=True, exist_ok=True)
-    images = {name: fn(size) for name, fn in TEXTURES.items()}
+    images = {name: fn() for name, fn in TEXTURES.items()}
     # The previous skin was six cube faces per picture. Leave none of them behind.
     for name, image in images.items():
         for face in _CUBE_FACES:
@@ -345,7 +462,30 @@ def _save_textures(texture_dir: Path, size: int = SIZE) -> dict[str, np.ndarray]
     return images
 
 
+def _bake_shell(spec: mujoco.MjSpec) -> None:
+    """Give the shell dorsal texcoords without a second mesh file.
+
+    An STL cannot carry texcoords, and a ``texcoord`` attribute next to
+    ``file`` is ignored. The vertices written here are the STL-frame positions
+    ``shell_surface`` reconstructs, so MuJoCo's inertia fit runs once, the same
+    way it does for the file. The collision mesh is a different geom and is
+    left on its STL.
+    """
+    reference = mujoco.MjModel.from_xml_path(str(SRC))
+    original, faces, uv = shell_surface(reference)
+    for mesh in spec.meshes:
+        if mesh.name != "upper_shell_link":
+            continue
+        mesh.file = ""
+        mesh.uservert = original.reshape(-1).tolist()
+        mesh.userface = faces.reshape(-1).astype(int).tolist()
+        mesh.usertexcoord = uv.reshape(-1).tolist()
+        return
+    raise RuntimeError("upper_shell_link is not in the spec")
+
+
 def _paint(spec: mujoco.MjSpec, images: dict[str, np.ndarray], texture_dir: Path) -> None:
+    _bake_shell(spec)
     for name in images:
         tex = spec.add_texture()
         tex.name = name
@@ -367,8 +507,8 @@ def _paint(spec: mujoco.MjSpec, images: dict[str, np.ndarray], texture_dir: Path
         mat = spec.add_material(
             name=f"crab_{role}",
             rgba=[*finish.tint, 1.0],
-            texuniform=True,
-            texrepeat=list(TEX_REPEAT),
+            texuniform=finish.texuniform,
+            texrepeat=list(finish.texrepeat),
             specular=finish.specular,
             shininess=finish.shininess,
             reflectance=0.0,
@@ -404,12 +544,12 @@ def finish_tint(role: str) -> tuple[float, float, float]:
 def _xml_text(spec: mujoco.MjSpec) -> str:
     xml = HEADER + spec.to_xml()
     xml = re.sub(
-        r'file="[^"]*/((?:carapace|ventral|tip)\.png)"',
+        r'file="[^"]*/((?:carapace|legs|ventral|tip)\.png)"',
         r'file="textures/\1"',
         xml,
     )
     xml = re.sub(
-        r'(<texture\b[^>]*colorspace=")linear(" name="(?:carapace|ventral|tip)")',
+        r'(<texture\b[^>]*colorspace=")linear(" name="(?:carapace|legs|ventral|tip)")',
         r"\1sRGB\2",
         xml,
     )
@@ -426,13 +566,36 @@ def physics_snapshot(model: mujoco.MjModel) -> dict[str, np.ndarray]:
 
 
 def assert_physics_equal(src: Path, dst: Path) -> None:
-    """Compile both files and require the dynamics arrays to be identical."""
+    """Compile both files and require the dynamics arrays to be identical.
+
+    The shell visual geom's size is the one exception, and only up to
+    ``SHELL_GEOM_SIZE_ATOL``: its vertices are written out so the dorsal
+    texcoords can ride on them. Mass, inertia and every collision geom stay
+    bit-exact.
+    """
     base = mujoco.MjModel.from_xml_path(str(src))
     other = mujoco.MjModel.from_xml_path(str(dst))
+    geom = mujoco.mjtObj.mjOBJ_GEOM
+    shell = mujoco.mj_name2id(base, geom, SHELL_VISUAL_GEOM)
+    if shell < 0 or mujoco.mj_name2id(other, geom, SHELL_VISUAL_GEOM) != shell:
+        raise SystemExit("error: the shell visual geom moved")
     for name in PHYSICS_FIELDS:
         a = np.asarray(getattr(base, name))
         b = np.asarray(getattr(other, name))
-        if a.shape != b.shape or not np.array_equal(a, b):
+        if a.shape != b.shape:
+            raise SystemExit(f"error: {dst.name} changed the shape of {name}")
+        if name == "geom_size":
+            if np.max(np.abs(a[shell] - b[shell])) > SHELL_GEOM_SIZE_ATOL:
+                raise SystemExit(
+                    f"error: {SHELL_VISUAL_GEOM} size moved by more than "
+                    f"{SHELL_GEOM_SIZE_ATOL:g}"
+                )
+            rest = np.ones(a.shape[0], dtype=bool)
+            rest[shell] = False
+            if not np.array_equal(a[rest], b[rest]):
+                raise SystemExit(f"error: {dst.name} changed a geom_size")
+            continue
+        if not np.array_equal(a, b):
             raise SystemExit(
                 f"error: {dst.name} changed {name} "
                 f"({a.shape} vs {b.shape}); the skin must not move the dynamics"
@@ -440,7 +603,7 @@ def assert_physics_equal(src: Path, dst: Path) -> None:
 
 
 def write_skin(
-    dst: Path = DST, texture_dir: Path = TEXTURE_DIR, src: Path = SRC, size: int = SIZE,
+    dst: Path = DST, texture_dir: Path = TEXTURE_DIR, src: Path = SRC,
 ) -> None:
     """Write the textures and `jumper_crab.xml`. Leave `src` unread-only."""
     if not src.is_file():
@@ -451,7 +614,7 @@ def write_skin(
             f"error: write textures to {dst.parent / 'textures'}, beside the XML"
         )
     before = src.read_bytes()
-    images = _save_textures(texture_dir, size)
+    images = _save_textures(texture_dir)
     spec = mujoco.MjSpec.from_file(str(src))
     _paint(spec, images, texture_dir)
     text = _xml_text(spec)
@@ -466,12 +629,10 @@ def write_skin(
     tmp.replace(dst)
     if src.read_bytes() != before:
         raise SystemExit(f"error: {src.name} changed while the skin was written")
-    cap = images["carapace"].reshape(-1, 3)
-    lum = cap.mean(axis=1)
-    dark = float(cap[lum <= np.median(lum)].mean())
     print(
-        f"[skin] carapace dark-half sRGB {dark:.1f}  "
-        f"ventral mean {images['ventral'].mean():.1f}  texrepeat {TEX_REPEAT[0]:.0f}"
+        f"[skin] carapace mean sRGB {images['carapace'].mean():.1f}  "
+        f"ventral mean {images['ventral'].mean():.1f}  "
+        f"tip mean {images['tip'].mean():.1f}"
     )
 
 

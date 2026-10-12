@@ -69,11 +69,23 @@ def test_crab_skin_matches_jumper_physics() -> None:
         assert _names(base, obj, count) == _names(crab, obj, count)
     assert base.nq == crab.nq and base.nv == crab.nv
 
-    fields = _builder().PHYSICS_FIELDS
+    mod = _builder()
+    fields = mod.PHYSICS_FIELDS
+    shell = mujoco.mj_name2id(base, mujoco.mjtObj.mjOBJ_GEOM, mod.SHELL_VISUAL_GEOM)
     for name in fields:
         got = np.asarray(getattr(base, name))
         other = np.asarray(getattr(crab, name))
         assert got.shape == other.shape, name
+        if name == "geom_size":
+            # The shell visual is inlined so its texcoords have vertices to
+            # follow. That round-trip is a fraction of a micrometre. Every
+            # other geom, the collision geoms included, stays bit-exact.
+            delta = np.max(np.abs(got[shell] - other[shell]))
+            assert delta <= mod.SHELL_GEOM_SIZE_ATOL, delta
+            rest = np.ones(got.shape[0], dtype=bool)
+            rest[shell] = False
+            np.testing.assert_array_equal(got[rest], other[rest])
+            continue
         np.testing.assert_array_equal(got, other, err_msg=name)
 
     # Control: the same comparison rejects a one-body mass change, so an empty
@@ -82,6 +94,10 @@ def test_crab_skin_matches_jumper_physics() -> None:
     bumped[1] += 0.05
     with pytest.raises(AssertionError):
         np.testing.assert_array_equal(bumped, np.asarray(crab.body_mass))
+    # And the shell tolerance is not a free pass: a tenth of a millimetre fails.
+    swollen = np.array(crab.geom_size[shell], copy=True)
+    swollen[0] += 1e-4
+    assert np.max(np.abs(base.geom_size[shell] - swollen)) > mod.SHELL_GEOM_SIZE_ATOL
 
 
 def test_sensors_stay_black_and_groups_take_their_materials() -> None:
@@ -121,29 +137,55 @@ def test_sensors_stay_black_and_groups_take_their_materials() -> None:
     assert tip < shell < ventral
 
 
-def test_the_marble_is_a_repeated_tile_and_the_colours_are_not_black() -> None:
-    """No baked texcoords, and a dark rgba would make the tile read as black.
+def _spot_aspects(mask: np.ndarray) -> np.ndarray:
+    """Major/minor axis of each connected mark. A bar returns a large number."""
+    import scipy.ndimage as ndi
 
-    A cube map ignores `texrepeat`, so the pinch stays the size of the shell.
-    The skin is a 2D tile with `texuniform` and a repeat large enough that the
-    veins are small. The meshes are still the STLs. The carapace's darker half
-    has to land near sRGB 90–120, and the belly, thighs and forearms stay a
-    pale cream rather than white or a saturated orange.
+    labels, count = ndi.label(mask)
+    aspects = []
+    for label in range(1, count + 1):
+        ys, xs = np.nonzero(labels == label)
+        if len(xs) < 20:
+            continue
+        pts = np.stack([ys, xs], axis=1).astype(np.float64)
+        pts -= pts.mean(axis=0)
+        cov = (pts.T @ pts) / len(pts)
+        ev = np.sort(np.linalg.eigvalsh(cov))[::-1]
+        aspects.append(float(np.sqrt((ev[0] + 1e-9) / (ev[1] + 1e-9))))
+    return np.asarray(aspects)
+
+
+def test_the_spots_are_round_and_the_shell_is_ivory() -> None:
+    """Crisp discs on an ivory shell, sparse on the crown and denser in front.
+
+    A tiled texture on this dome follows the thin mesh axis and turns marks
+    into streaks. The shell mesh is the only one with texcoords, taken from
+    its own STL frame. Legs repeat a small dotted tile. The ivory mean has to
+    sit well above the old olive tile, which averaged about sRGB 106.
     """
     base = mujoco.MjModel.from_xml_path(str(JUMPER_XML))
     assert int(np.max(base.mesh_texcoordnum)) == 0, "the premise: the STLs grew UVs"
 
     crab = mujoco.MjModel.from_xml_path(str(CRAB_XML))
     flat = int(mujoco.mjtTexture.mjTEXTURE_2D)
-    assert crab.ntex == 3
+    assert crab.ntex == 4
     assert {int(t) for t in crab.tex_type} == {flat}
-    assert int(np.max(crab.mesh_texcoordnum)) == 0, "the skin must not replace the STLs"
-    assert bool(np.all(crab.mat_texuniform))
-    assert float(np.min(crab.mat_texrepeat)) >= 4.0
     assert float(np.max(crab.mat_reflectance)) == 0.0
     assert not (REPO / "assets" / "jumper" / "skin").exists()
 
     mod = _builder()
+    shell_id = mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MESH, "upper_shell_link")
+    assert int(crab.mesh_texcoordnum[shell_id]) == int(crab.mesh_vertnum[shell_id])
+    others = [i for i in range(crab.nmesh) if i != shell_id]
+    assert int(np.max(crab.mesh_texcoordnum[others])) == 0
+
+    shell_mat = mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MATERIAL, "crab_shell")
+    assert not bool(crab.mat_texuniform[shell_mat])
+    assert float(np.max(crab.mat_texrepeat[shell_mat])) == 1.0
+    leg_mat = mujoco.mj_name2id(crab, mujoco.mjtObj.mjOBJ_MATERIAL, "crab_leg")
+    assert bool(crab.mat_texuniform[leg_mat])
+    assert float(np.max(crab.mat_texrepeat[leg_mat])) <= 3.0
+
     assert mod.appearance("LM_thigh_link") == "leg_joint"
     assert mod.appearance("LF_forearm_link") == "claw_joint"
     assert mod.appearance("LM_calf_link") == "leg"
@@ -152,21 +194,46 @@ def test_the_marble_is_a_repeated_tile_and_the_colours_are_not_black() -> None:
         body = mujoco.mj_id2name(crab, mujoco.mjtObj.mjOBJ_BODY, int(crab.geom_bodyid[i]))
         if not name.endswith("_visual") or mod.appearance(body) == "sensor":
             continue
-        # Near white. A dark rgba multiplies the tile and the marble goes black.
+        # Near white. A dark rgba multiplies the picture and the ivory goes grey.
         assert float(crab.geom_rgba[i, :3].min()) > 0.85, name
 
-    carapace = np.asarray(Image.open(TEXTURES / "carapace.png")).reshape(-1, 3)
-    lum = carapace.mean(axis=1)
-    dark = carapace[lum <= np.median(lum)].mean()
-    assert 90.0 <= dark <= 120.0, dark
-    assert float(lum.std()) > 12.0, "a flat brown would pass the mean and show no marble"
+    carapace = np.asarray(Image.open(TEXTURES / "carapace.png"))
+    assert float(carapace.mean()) > 180.0, carapace.mean()
+    # Crimson and burgundy both have a low green channel; ivory does not.
+    spots = carapace[:, :, 1] < 140
+    assert 0.02 < float(spots.mean()) < 0.25, spots.mean()
+    aspects = _spot_aspects(spots)
+    assert len(aspects) >= 8, "control: a blank shell would have no discs to measure"
+    assert float(np.median(aspects)) < 2.0, float(np.median(aspects))
+    # The aspect helper can fail. A horizontal bar is not a disc.
+    bar = np.zeros((64, 64), dtype=bool)
+    bar[30:34, 4:60] = True
+    assert float(_spot_aspects(bar)[0]) > 4.0
+
+    _original, _faces, uv = mod.shell_surface(base)
+    height, width = carapace.shape[:2]
+    x = np.clip(np.rint(uv[:, 0] * (width - 1)).astype(int), 0, width - 1)
+    y = np.clip(np.rint(uv[:, 1] * (height - 1)).astype(int), 0, height - 1)
+    on_spot = carapace[y, x, 1] < 140
+    front = uv[:, 0] >= np.quantile(uv[:, 0], 0.75)
+    back = uv[:, 0] <= np.quantile(uv[:, 0], 0.25)
+    centre_u = np.median(uv[:, 0])
+    centre_v = np.median(uv[:, 1])
+    radial = np.hypot(uv[:, 0] - centre_u, uv[:, 1] - centre_v)
+    crown = radial <= np.quantile(radial, 0.25)
+    rim = radial >= np.quantile(radial, 0.75)
+    assert float(on_spot[front].mean()) > float(on_spot[back].mean())
+    assert float(on_spot[rim].mean()) > float(on_spot[crown].mean())
 
     ventral = np.asarray(Image.open(TEXTURES / "ventral.png")).reshape(-1, 3).astype(np.float64)
     hi = ventral.max(axis=1)
     sat = (hi - ventral.min(axis=1)) / np.maximum(hi, 1.0)
-    assert float(sat.mean()) < 0.25, sat.mean()
-    # Pale cream-ochre. Above ~190 the beach sun clips it to white plastic.
-    assert 150.0 <= float(ventral.mean()) <= 185.0
+    assert float(sat.mean()) < 0.2, sat.mean()
+    assert float(ventral.mean()) > 210.0
+
+    tip = np.asarray(Image.open(TEXTURES / "tip.png")).reshape(-1, 3).astype(np.float64)
+    assert 60.0 < float(tip.mean()) < 140.0
+    assert float(tip[:, 0].mean()) > float(tip[:, 1].mean()) > float(tip[:, 2].mean())
 
 
 def test_every_link_has_a_role() -> None:

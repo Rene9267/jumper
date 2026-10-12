@@ -1,4 +1,4 @@
-<!-- tracks: USAGE.md @ sha256:34a013e467aead11 -->
+<!-- tracks: USAGE.md @ sha256:ec48135fa7ed56a0 -->
 
 # 手册
 
@@ -746,26 +746,26 @@ python tools/hull_collision.py --model assets/<name>/<model>.xml --exclude <mesh
 
 ### 螃蟹外观
 
-`assets/jumper/jumper_crab.xml` 是同一台机器人的另一套外观。`assets/jumper/tools/build_skin.py` 用 MjSpec 读入 `jumper.xml`，写出这份文件，并把按种子生成的三张贴图存到 `assets/jumper/textures/`（`carapace.png`、`ventral.png`、`tip.png`）。纹理只用 NumPy 和 Pillow 画。种子是脚本里的 `SEED`，所以再跑一次会得到仓库里已经提交的那套图。网格仍是 `jumper.xml` 里的 STL。
+`assets/jumper/jumper_crab.xml` 是同一台机器人的另一套外观。`assets/jumper/tools/build_skin.py` 用 MjSpec 读入 `jumper.xml`，写出这份文件，并把按种子生成的四张贴图存到 `assets/jumper/textures/`（`carapace.png`、`legs.png`、`ventral.png`、`tip.png`）。纹理只用 NumPy 和 Pillow 画。种子是脚本里的 `SEED`，所以再跑一次会得到仓库里已经提交的那套图。色板是脚本顶部的 `IVORY`、`PEACH`、`SPOT_CRIMSON` 和 `SPOT_BURGUNDY`。
 
-视觉 STL 没有纹理坐标，所以关掉 `texuniform` 的二维纹理只有一个纹素。立方体贴图能贴上背甲，但它不理会 `texrepeat`，穹顶上的汇聚就会和整个几何体一样大。这套外观用一张可平铺的二维图，打开 `texuniform`，`texrepeat` 为 6，脉络大约一厘米，在成片时一两到三米的距离上汇聚比一个像素还小。从正上方极近看，仍可能看出一点汇聚。geom 的颜色会乘上这张纹理：深色 rgba 会把背甲压成黑色，所以视觉 geom 保持接近白色的淡色，颜色由图片本身来带。
+颜色取自地中海箱蟹 *Calappa granulata*：浅象牙色背甲带一点暖桃色，上面是边缘清晰的绯红到酒红圆斑（`#9E2235` 到 `#6E1E3A`）。圆斑在前缘和轮廓上更大、更密，背甲顶部很少。它们是硬边的圆，不是脉络。步足是同一象牙色，上面有少量小红点。螯尖是更深的红褐色。geom 的颜色会乘上纹理，所以视觉 geom 保持接近白色的淡色，颜色由图片本身来带。
 
-颜色取自地中海滨蟹 *Pachygrapsus marmoratus* 和 *Carcinus aestuarii*：中等橄榄棕色的背甲上是细的深橄榄紫色脉络和小的浅色斑点。背甲较暗的一半大约在 sRGB 90–120，这样在默认头灯下读成橄榄色，而不是黑色：
+`texuniform` 用网格存储的 X 和 Y 来贴一张二维图。这只背甲的那两根轴是薄的方向和一根长轴，平铺的图就会变成纵向的条纹。所以背甲网格写上了纹理坐标，坐标在 STL 坐标系的背面平面上（前方和侧向），`texrepeat` 保持为 1。不另存网格文件。步足的 `texrepeat` 是 2，一个点大约一厘米。
 
 | 分组 | 连杆 | 外观 |
 |---|---|---|
-| shell | `upper_shell_link` | 中等橄榄棕，细深色脉络，浅色斑点 |
-| underside | `base_link` | 浅奶油赭石色 |
-| leg | 四条步足的小腿和足尖 | 同一套大理石纹，略偏橄榄 |
-| leg joint | 四个髋和四条大腿 | 浅奶油赭石色，和腹面同一类 |
-| claw | 肩、大臂、掌 | 大理石纹，略偏褐紫 |
-| claw joint | 前臂、掌垫、夹持嵌件 | 浅奶油赭石色 |
-| tip | `finger` 和 `finger_tip` | 深褐近黑 |
+| shell | `upper_shell_link` | 象牙色，清晰的红紫圆斑，前缘和轮廓更密 |
+| underside | `base_link` | 纯象牙色 |
+| leg | 四条步足的小腿和足尖 | 象牙色，少量红点 |
+| leg joint | 四个髋和四条大腿 | 同样的带点象牙色 |
+| claw | 肩、大臂、掌 | 带点象牙色 |
+| claw joint | 前臂、掌垫、夹持嵌件 | 纯象牙色 |
+| tip | `finger` 和 `finger_tip` | 更深的红褐色 |
 | sensor | 显示屏、相机、ToF | 保持黑色 |
 
-`reflectance` 是 0。对深色天空的镜像会把背甲拉向黑色，甲壳也不是那样反光的。奶油色上的高光很弱，大腿和前臂在沙滩太阳下不会变成白色塑料。每个 `*_meshcol` geom 用纹理的平均色作为纯色 rgba，并且不带材质。`--strip-visual` 删掉视觉网格之后，留下来的碰撞 geom 仍然是滨蟹的颜色。
+`reflectance` 是 0，背甲的高光也很弱，圆斑不会被抹成一条漆面。每个 `*_meshcol` geom 用纹理的平均色作为纯色 rgba，并且不带材质。`--strip-visual` 删掉视觉网格之后，留下来的碰撞 geom 仍然是螃蟹的颜色。
 
-碰撞几何、`contype`、`conaffinity`、摩擦、质量、惯量、关节和执行器都是默认模型的。`tests/test_crab_skin.py` 编译两份文件并精确比较这些数组，还比较视觉剪影：正面、侧面、斜前方和上方，默认外观和滨蟹的重叠要超过 98%。脚本在替换 XML 之前做同样的动力学检查，并且不写 `jumper.xml`。
+碰撞几何、`contype`、`conaffinity`、摩擦、质量、惯量、关节和执行器都是默认模型的。`tests/test_crab_skin.py` 编译两份文件并比较这些数组。背甲视觉网格的包围尺寸可能有不到一微米的出入，因为它的顶点被内联进去以携带纹理坐标；每一个碰撞 geom 都按比特相等。测试还比较视觉剪影：正面、侧面、斜前方和上方，默认外观和螃蟹的重叠要超过 98%。脚本在替换 XML 之前做同样的动力学检查，并且不写 `jumper.xml`。
 
 每一个 jumper 任务都注册了这套外观，舞蹈任务也在内（`jumper.dance`、`jumper.dance_brazilian`、`jumper.dance_dream_wings`、`jumper.dance_maze`、`jumper.dance_waist`）。表里的第一项仍是 `jumper`，所以训练、回放和导出在有人指定 `crab` 之前保持原样。`--list` 会把两个都列出来。
 
