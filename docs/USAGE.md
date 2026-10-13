@@ -906,7 +906,7 @@ MUJOCO_GL=egl python assets/jumper/tools/build_skin.py --preview
 
 Two more appearance-only variants share the same mechanism:
 
-- `--model crab_mesh`: the crab skin plus a visual-only *Calappa* carapace (with its lateral wings) and claw granules, built by `assets/jumper/tools/build_calappa.py`. No mass, no contacts.
+- `--model crab_mesh`: the crab skin plus a visual-only *Calappa* carapace and claw granules, built by `assets/jumper/tools/build_calappa.py`. The side wings are off (`WING_AMP = 0.0` in that script; set `1.0` to restore). No mass, no contacts.
 - `--model crab_female`: `crab_mesh` with a pink carapace and purple claw tips; only the textures differ.
 
 ![crab_mesh on the cliff](media/crab-mesh-scogliera.jpg)

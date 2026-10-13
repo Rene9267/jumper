@@ -48,12 +48,13 @@ shell = trimesh.load(os.path.join(V, 'upper_shell_link.stl'))
 def sstep(x): x=np.clip(x,0,1); return x*x*(3-2*x)
 cx0, a, b = -0.021, 0.080, 0.084
 RIM = 1.10
+WING_AMP = 0.0  # set 1.0 to restore
 def wingf(x, y):
     w = np.zeros_like(x)
     for s in (1, -1):
         t = np.clip(((x+0.045)/0.050)**2 + ((s*y-0.090)/0.031)**2, 0, 1)
         w = np.maximum(w, sstep(1-t))
-    return w * (np.abs(y) > 0.05)
+    return WING_AMP * w * (np.abs(y) > 0.05)
 def inside(x, y):
     return (((x-cx0)/a)**2 + (y/b)**2 <= RIM) | (wingf(x, y) > 0.02)
 # boundary radius per angle (fine ray march), then lightly smoothed

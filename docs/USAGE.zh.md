@@ -1,4 +1,4 @@
-<!-- tracks: USAGE.md @ sha256:3c0655830cd07136 -->
+<!-- tracks: USAGE.md @ sha256:93d61e701922db35 -->
 
 # 手册
 
@@ -792,7 +792,7 @@ MUJOCO_GL=egl python assets/jumper/tools/build_skin.py --preview
 
 还有两套只改外观的变体，机构与上面相同：
 
-- `--model crab_mesh`：螃蟹外观再加上一个只用于显示的 *Calappa* 背甲（带两侧的翼）和螯上的颗粒，由 `assets/jumper/tools/build_calappa.py` 生成。没有质量，没有接触。
+- `--model crab_mesh`：螃蟹外观再加上一个只用于显示的 *Calappa* 背甲和螯上的颗粒，由 `assets/jumper/tools/build_calappa.py` 生成。两侧的翼是关掉的（脚本里 `WING_AMP = 0.0`；设成 `1.0` 即恢复）。没有质量，没有接触。
 - `--model crab_female`：`crab_mesh` 换成粉色背甲和紫色螯尖；只有纹理不同。
 
 ![悬崖上的 crab_mesh](media/crab-mesh-scogliera.jpg)
