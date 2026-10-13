@@ -80,7 +80,8 @@ browser and `play --app`. A bundle carries those runtimes, one policy per mode, 
 map and reference frames that let every host check the same inputs and outputs.
 
 Jumper itself lives in `assets/jumper/jumper.xml`, with its servo curve, dToF sensor and
-onboard camera. Scenes put it on a studio floor, rough ground, ice, stairs or a rope swing.
+onboard camera. `assets/jumper/jumper_crab.xml` is the same mechanism in shore-crab colours,
+selected with `--model crab`. Scenes put it on a studio floor, rough ground, ice, stairs or a rope swing.
 
 ## Project status
 

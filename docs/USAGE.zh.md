@@ -1,4 +1,4 @@
-<!-- tracks: USAGE.md @ sha256:a32832b3edf24a27 -->
+<!-- tracks: USAGE.md @ sha256:93d61e701922db35 -->
 
 # 手册
 
@@ -21,6 +21,7 @@
 - [需要素材的任务：`jumper.dance`](#需要素材的任务jumperdance)
 - [带第二个命令的任务：`jumper.posture`](#带第二个命令的任务jumperposture)
 - [新增一个模型（asset）](#新增一个模型asset)
+- [螃蟹外观](#螃蟹外观)
 - [设置默认值](#设置默认值)
 - [场景](#场景)
 - [TensorBoard](#tensorboard)
@@ -743,6 +744,62 @@ python tools/hull_collision.py --model assets/<name>/<model>.xml --exclude <mesh
 
 它默认只做报告（包括最大的向内收缩量）；`--apply` 会写出 STL 并改 XML。
 
+### 螃蟹外观
+
+`assets/jumper/jumper_crab.xml` 是同一台机器人的另一套外观。`assets/jumper/tools/build_skin.py` 用 MjSpec 读入 `jumper.xml`，写出这份文件，并把按种子生成的四张贴图存到 `assets/jumper/textures/`（`carapace.png`、`legs.png`、`ventral.png`、`tip.png`）。纹理只用 NumPy 和 Pillow 画。种子是脚本里的 `SEED`，所以再跑一次会得到仓库里已经提交的那套图。色板是脚本顶部的 `IVORY`、`PEACH`、`SPOT_CRIMSON` 和 `SPOT_BURGUNDY`。
+
+颜色取自地中海箱蟹 *Calappa granulata*：浅象牙色背甲带一点暖桃色，上面是边缘清晰的绯红到酒红圆斑（`#9E2235` 到 `#6E1E3A`）。圆斑在前缘和轮廓上更大、更密，背甲顶部很少。它们是硬边的圆，不是脉络。步足是同一象牙色，上面有少量小红点。螯尖是更深的红褐色。geom 的颜色会乘上纹理，所以视觉 geom 保持接近白色的淡色，颜色由图片本身来带。
+
+`texuniform` 用网格存储的 X 和 Y 来贴一张二维图。这只背甲的那两根轴是薄的方向和一根长轴，平铺的图就会变成纵向的条纹。整只背甲都用背面平面来贴的话，圆斑在顶部是圆的，到了陡的侧壁就会被拉成竖直的窄缝。所以背甲网格写的是盒式纹理坐标：每个面投到它朝向的那个平面上（背面、侧面或前面），落在两个平面交界上的顶点各留一份坐标。背甲贴图是这三份投影拼成的图集，`texrepeat` 保持为 1。不另存网格文件。步足的 `texrepeat` 是 2，一个点大约一厘米。
+
+| 分组 | 连杆 | 外观 |
+|---|---|---|
+| shell | `upper_shell_link` | 象牙色，清晰的红紫圆斑，前缘和轮廓更密 |
+| underside | `base_link` | 纯象牙色 |
+| leg | 四条步足的小腿和足尖 | 象牙色，少量红点 |
+| leg joint | 四个髋和四条大腿 | 同样的带点象牙色 |
+| claw | 肩、大臂、掌 | 带点象牙色 |
+| claw joint | 前臂、掌垫、夹持嵌件 | 纯象牙色 |
+| tip | `finger` 和 `finger_tip` | 更深的红褐色 |
+| sensor | 显示屏、相机、ToF | 保持黑色 |
+
+`reflectance` 是 0，背甲的高光也很弱，圆斑不会被抹成一条漆面。每个 `*_meshcol` geom 用纹理的平均色作为纯色 rgba，并且不带材质。`--strip-visual` 删掉视觉网格之后，留下来的碰撞 geom 仍然是螃蟹的颜色。
+
+碰撞几何、`contype`、`conaffinity`、摩擦、质量、惯量、关节和执行器都是默认模型的。`tests/test_crab_skin.py` 编译两份文件并比较这些数组。背甲视觉网格的包围尺寸可能有不到一微米的出入，因为它的顶点被内联进去以携带纹理坐标；每一个碰撞 geom 都按比特相等。测试还比较视觉剪影：正面、侧面、斜前方和上方，默认外观和螃蟹的重叠要超过 98%。脚本在替换 XML 之前做同样的动力学检查，并且不写 `jumper.xml`。
+
+每一个 jumper 任务都注册了这套外观，舞蹈任务也在内（`jumper.dance`、`jumper.dance_brazilian`、`jumper.dance_dream_wings`、`jumper.dance_maze`、`jumper.dance_waist`）。表里的第一项仍是 `jumper`，所以训练、回放和导出在有人指定 `crab` 之前保持原样。`--list` 会把两个都列出来。
+
+```bash
+python scripts/train.py --list
+
+# 回放。任务、奖励和 checkpoint 还是你已有的那些。
+python scripts/play.py --task jumper.dance --model crab
+python scripts/play.py --task jumper.flat --model crab --scene beach
+MJRL_MODEL=crab python scripts/play.py --task jumper.posture
+
+# 策略片段。文件名是 walk-crab.gif，README 里的那条片段留在原地。
+python tools/readme_media.py --model crab --only walk
+
+# 重新生成 XML 和纹理。动力学对不上就拒绝写出。
+python assets/jumper/tools/build_skin.py
+
+# HOME 姿态的静帧（默认外观和滨蟹并排）和一段短转台，写到 docs/media/。
+# 一份在 scenes/default.py 上，一份在 scenes/beach.py 上（crab-beach-*.png）。
+# 背甲特写：crab-close-above.png、crab-close-side.png，以及 crab-beach-close-*。
+# 先用 egl；建不起这个上下文时脚本改用 osmesa 再试一次。
+MUJOCO_GL=egl python assets/jumper/tools/build_skin.py --preview
+```
+
+还有两套只改外观的变体，机构与上面相同：
+
+- `--model crab_mesh`：螃蟹外观再加上一个只用于显示的 *Calappa* 背甲和螯上的颗粒，由 `assets/jumper/tools/build_calappa.py` 生成。两侧的翼是关掉的（脚本里 `WING_AMP = 0.0`；设成 `1.0` 即恢复）。没有质量，没有接触。
+- `--model crab_female`：`crab_mesh` 换成粉色背甲和紫色螯尖；只有纹理不同。
+
+![悬崖上的 crab_mesh](media/crab-mesh-scogliera.jpg)
+![crab_female](media/crab-female-front.jpg)
+
+用这份资产跑出来的日志在 `logs/jumper_crab/`，因为日志目录取的是模型文件的主干名。
+
 ---
 
 ## 设置默认值
@@ -773,7 +830,7 @@ python tools/hull_collision.py --model assets/<name>/<model>.xml --exclude <mesh
 MJRL_TASK=jumper.flat        # 见 --list。留空且命令行也没给 -> 报错
 
 # 选哪个资产：一个已注册的名字，或者一个 .xml 文件的路径
-MJRL_MODEL=                # 留空 -> 任务的默认资产
+MJRL_MODEL=                # 留空 -> 任务的默认资产。crab 是滨蟹外观
 
 # 世界长什么样：地面、天空和灯光。见 --list。留空 -> 任务自带的那个
 MJRL_SCENE=
@@ -1225,6 +1282,9 @@ python scripts/train.py
 
 # 只解析不构建环境，用来检查参数
 python scripts/train.py --task jumper.tripod --model jumper --dry-run
+
+# 用滨蟹外观回放一个已经训好的策略
+python scripts/play.py --task jumper.dance --model crab
 
 # 一边训练一边看（这是默认行为，不需要开关）
 python scripts/train.py --task jumper.flat --num_envs 64

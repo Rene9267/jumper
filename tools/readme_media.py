@@ -2,7 +2,12 @@
 
     python tools/readme_media.py                    # every clip, and the still
     python tools/readme_media.py --only walk jump   # some of them
+    python tools/readme_media.py --model crab --only walk
     python tools/readme_media.py --list
+
+`--model` is the same name or XML path as on `play.py`. Omit it and each clip uses
+the task's default asset. A named model is written beside the default clips
+(`walk-crab.gif`), so a skin cannot overwrite the pictures in the README.
 
 Each clip is one task's committed export (`tasks/<task>/out/example/`) run in a
 replay environment, so a picture in the README is of a policy somebody can load,
@@ -202,8 +207,12 @@ def _script(term, script: Script, step_dt: float, start: list[int], env) -> None
     term.compute = scripted
 
 
-def rollout(clip: Clip):
-    """Run `clip`'s policy. Returns `(qpos per control step, model, control rate)`."""
+def rollout(clip: Clip, model_name: str | None = None):
+    """Run `clip`'s policy. Returns `(qpos per control step, model, control rate)`.
+
+    `model_name` is a `--model` value. None leaves the task's default asset, which
+    is the call `load_env_cfg` already makes when no asset is passed.
+    """
     from dataclasses import asdict
 
     import mujoco
@@ -217,7 +226,11 @@ def rollout(clip: Clip):
     import tasks
     from tasks.jumper.dance.export_media import _qpos_of, _verify_qpos_roundtrip
 
-    env_cfg = tasks.load_env_cfg(clip.task, play=True)
+    if model_name is None:
+        env_cfg = tasks.load_env_cfg(clip.task, play=True)
+    else:
+        env_cfg = tasks.load_env_cfg(
+            clip.task, asset=tasks.get(clip.task).resolve_asset(model_name), play=True)
     for name, term in env_cfg.commands.items():
         if hasattr(term, "pad"):
             term.pad = False
@@ -358,6 +371,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("--only", nargs="+", choices=sorted(CLIPS), metavar="CLIP",
                     help="draw these and leave the rest as they are")
+    ap.add_argument("--model", default=None,
+                    help="registered asset name or XML path, as on play.py. "
+                         "Omit it and each clip uses the task's default model")
     ap.add_argument("--list", action="store_true", help="name the clips and exit")
     args = ap.parse_args()
 
@@ -380,8 +396,9 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     for name in args.only or list(CLIPS):
         clip = CLIPS[name]
-        qpos, model, rate = rollout(clip)
-        path = OUT / f"{name}.gif"
+        qpos, model, rate = rollout(clip, args.model)
+        suffix = "" if not args.model else "-" + Path(args.model).stem
+        path = OUT / f"{name}{suffix}.gif"
         every = rate / FPS
         if abs(every - round(every)) > 1e-6:
             raise SystemExit(f"error: {clip.task} steps at {rate:g} Hz, which {FPS:g} "
@@ -390,7 +407,7 @@ def main() -> int:
         print(f"[media] {path.relative_to(REPO)}  {path.stat().st_size / 1e6:.2f} MB")
         if name == STILL_FROM:
             row = qpos[round(STILL_AT * rate)][None]
-            still = OUT / "jumper.png"
+            still = OUT / f"jumper{suffix}.png"
             twice = (2 * STILL[0], 2 * STILL[1])
             _png(next(iter(_frames(model, row, STILL_CAMERA, twice))), still)
             print(f"[media] {still.relative_to(REPO)}  {still.stat().st_size / 1e6:.2f} MB")

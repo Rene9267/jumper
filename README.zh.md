@@ -1,4 +1,4 @@
-<!-- tracks: README.md @ sha256:2f51540bc342a691 -->
+<!-- tracks: README.md @ sha256:e1a012d65126c8cf -->
 
 ![跳跳](docs/media/jumper-hero-zh.png)
 
@@ -44,6 +44,46 @@
 | [**公园泵道**](https://github.com/KingKongRobotics/jumper-design/blob/be74e0f2e5e2433d24a3a7b1c1aa0dbeae480356/library/maps/park-pump-track.map) | [**卧室**](https://github.com/KingKongRobotics/jumper-design/blob/be74e0f2e5e2433d24a3a7b1c1aa0dbeae480356/library/maps/bedroom.map) | [**足球**](https://github.com/KingKongRobotics/jumper-design/blob/be74e0f2e5e2433d24a3a7b1c1aa0dbeae480356/library/maps/soccer.map) |
 
 [浏览全部场景](https://github.com/KingKongRobotics/jumper-design/tree/main/library/maps)
+
+## 滨蟹配色
+
+`--model crab` 是同一套跳跳机构，涂成地中海箱蟹（*Calappa granulata*）的颜色：浅象牙色背甲上是边缘清晰的绯红和酒红圆斑，前缘和轮廓更密，步足是带少量红点的象牙色，螯尖是更深的红褐色。显示屏、相机和 ToF 保持黑色。`assets/jumper/jumper.xml` 不动，两份模型编译出的质量、惯量、碰撞和关节相同。
+
+静帧是 `scenes/default.py` 上的 HOME 姿态。左侧是默认外观，右侧是滨蟹外观。
+
+**正面。**
+
+![正面，默认与滨蟹](docs/media/crab-front.png)
+
+**侧面。**
+
+![侧面，默认与滨蟹](docs/media/crab-side.png)
+
+**斜前方。**
+
+![斜前方，默认与滨蟹](docs/media/crab-three-quarter.png)
+
+**背甲，俯视。** 硬边圆盘，顶部稀疏。
+
+![背甲俯视](docs/media/crab-close-above.png)
+
+**背甲，侧视。** 侧壁用它自己的投影，同样的圆盘在侧面也是圆的。
+
+![背甲侧视](docs/media/crab-close-side.png)
+
+同一姿态放在 `scenes/beach.py` 上，也就是这套外观要去的岸边：
+
+![沙滩，默认与滨蟹](docs/media/crab-beach-three-quarter.png)
+
+```bash
+python scripts/play.py --task jumper.dance --model crab
+MJRL_MODEL=crab python scripts/play.py --task jumper.flat
+python assets/jumper/tools/build_skin.py             # 重新生成这套外观
+python assets/jumper/tools/build_skin.py --preview   # 上面的静帧、沙滩，以及转台
+python tools/readme_media.py --model crab --only walk
+```
+
+`python scripts/train.py --list` 会在每一个 jumper 任务上列出 `crab`，舞蹈任务也在内。训练的默认模型仍是 `jumper`。更完整的说明在 [docs/USAGE.zh.md](docs/USAGE.zh.md#螃蟹外观)。
 
 ## 相关项目与指南
 
