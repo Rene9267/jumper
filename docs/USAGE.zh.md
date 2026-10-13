@@ -1,4 +1,4 @@
-<!-- tracks: USAGE.md @ sha256:880fec8f6e4aa12e -->
+<!-- tracks: USAGE.md @ sha256:3c0655830cd07136 -->
 
 # 手册
 
@@ -789,6 +789,14 @@ python assets/jumper/tools/build_skin.py
 # 先用 egl；建不起这个上下文时脚本改用 osmesa 再试一次。
 MUJOCO_GL=egl python assets/jumper/tools/build_skin.py --preview
 ```
+
+还有两套只改外观的变体，机构与上面相同：
+
+- `--model crab_mesh`：螃蟹外观再加上一个只用于显示的 *Calappa* 背甲（带两侧的翼）和螯上的颗粒，由 `assets/jumper/tools/build_calappa.py` 生成。没有质量，没有接触。
+- `--model crab_female`：`crab_mesh` 换成粉色背甲和紫色螯尖；只有纹理不同。
+
+![悬崖上的 crab_mesh](media/crab-mesh-scogliera.jpg)
+![crab_female](media/crab-female-front.jpg)
 
 用这份资产跑出来的日志在 `logs/jumper_crab/`，因为日志目录取的是模型文件的主干名。
 
